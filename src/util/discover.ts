@@ -1,6 +1,6 @@
 import { promises as fs } from "node:fs";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { delimiter, join, resolve } from "node:path";
 
 export interface HandoffProject {
   projectPath: string;
@@ -60,12 +60,13 @@ async function defaultRoots(): Promise<string[]> {
 }
 
 /**
- * Parse HANDOFF_SEARCH_ROOTS. Accepts both `:` and `;` as separators
- * so Windows users can paste either POSIX or PATH-style lists.
+ * Parse HANDOFF_SEARCH_ROOTS using the platform's PATH delimiter
+ * (`;` on Windows, `:` on POSIX). A mixed-delimiter split would
+ * chop Windows drive-letter paths at the `:` in `C:\...`.
  */
 function parseEnvRoots(raw: string): string[] {
   return raw
-    .split(/[;:]/)
+    .split(delimiter)
     .map((s) => s.trim())
     .filter((s) => s.length > 0);
 }
