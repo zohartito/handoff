@@ -9,6 +9,7 @@ import {
   renderMarkdown,
   humanDuration,
   cwdMatchesProject,
+  normalizeForCompare,
   type RenderCtx,
 } from "../src/commands/ingest.js";
 
@@ -77,7 +78,7 @@ test("cwdMatchesProject: exact and descendant paths match, unrelated paths do no
   // exact match (same case)
   assert.equal(cwdMatchesProject("C:\\Users\\zohar_4ta16fp\\handoff", proj), true);
   // case-insensitive (Windows paths)
-  assert.equal(cwdMatchesProject("c:\\users\\zohar_4ta16fp\\handoff", proj), true);
+  assert.equal(cwdMatchesProject("c:\\users\\zohar_4ta16fp\\handoff", proj, "win32"), true);
   // trailing slash tolerated
   assert.equal(cwdMatchesProject("C:\\Users\\zohar_4ta16fp\\handoff\\", proj), true);
   // descendant
@@ -92,6 +93,37 @@ test("cwdMatchesProject: exact and descendant paths match, unrelated paths do no
   assert.equal(cwdMatchesProject("C:\\Users\\zohar_4ta16fp\\handoff-extra", proj), false);
   // null cwd never matches
   assert.equal(cwdMatchesProject(null, proj), false);
+});
+
+test("cwdMatchesProject: platform-conditional case sensitivity", () => {
+  // Linux: case-sensitive — /Users/Foo and /Users/foo are different dirs
+  assert.equal(cwdMatchesProject("/Users/Foo/proj", "/Users/Foo/proj", "linux"), true);
+  assert.equal(cwdMatchesProject("/Users/foo/proj", "/Users/Foo/proj", "linux"), false);
+  assert.equal(cwdMatchesProject("/users/Foo/proj", "/Users/Foo/proj", "linux"), false);
+  // Descendants still work with exact case
+  assert.equal(cwdMatchesProject("/Users/Foo/proj/src", "/Users/Foo/proj", "linux"), true);
+
+  // macOS: default FS is case-insensitive (though case-preserving)
+  assert.equal(cwdMatchesProject("/Users/Foo/proj", "/Users/Foo/proj", "darwin"), true);
+  assert.equal(cwdMatchesProject("/users/foo/proj", "/Users/Foo/proj", "darwin"), true);
+  assert.equal(cwdMatchesProject("/Users/FOO/proj/src", "/users/foo/proj", "darwin"), true);
+
+  // Windows: case-insensitive — C:\Foo and c:\foo are the same
+  assert.equal(cwdMatchesProject("C:\\Foo\\proj", "c:\\foo\\proj", "win32"), true);
+});
+
+test("normalizeForCompare: lowercases only on win32/darwin", () => {
+  // win32: full lowercase
+  assert.equal(normalizeForCompare("C:\\Users\\Foo", "win32"), "c:/users/foo");
+  // darwin: full lowercase
+  assert.equal(normalizeForCompare("/Users/Foo", "darwin"), "/users/foo");
+  // linux: preserves case
+  assert.equal(normalizeForCompare("/Users/Foo", "linux"), "/Users/Foo");
+  // trailing separator stripped
+  assert.equal(normalizeForCompare("/Users/Foo/", "linux"), "/Users/Foo");
+  assert.equal(normalizeForCompare("/Users/Foo\\", "linux"), "/Users/Foo");
+  // backslashes converted to forward slashes
+  assert.equal(normalizeForCompare("a\\b\\c", "linux"), "a/b/c");
 });
 
 test("humanDuration formats minutes and hours correctly", () => {

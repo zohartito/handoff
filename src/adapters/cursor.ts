@@ -1,5 +1,5 @@
 import { promises as fs } from "node:fs";
-import { homedir } from "node:os";
+import { homedir, platform } from "node:os";
 import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
@@ -92,14 +92,59 @@ export async function ingestCursor(opts: CursorIngestOpts): Promise<void> {
   }
 }
 
+/**
+ * Find the most-recent project-scoped Cursor composer for `project` and
+ * return its rendered summary. Returns `null` when Cursor isn't installed,
+ * no workspace matches this project, or no composer has been touched here.
+ * Used by `handoff ingest --all`.
+ */
+export async function buildCursorSummary(opts: { project: string; session?: string }): Promise<string | null> {
+  const probe = cursorPaths();
+  if (!(await exists(probe.globalDb))) return null;
+  const workspaces = await findCursorWorkspaces(probe, opts.project);
+  if (workspaces.length === 0) return null;
+  const globalDb = openReadOnly(probe.globalDb);
+  try {
+    const sessionId = opts.session ?? "latest";
+    const resolved = await resolveCursorSessionId(globalDb, workspaces, sessionId);
+    if (!resolved) return null;
+    const cwd = resolved.workspace ? fileUriToPath(resolved.workspace.folderUri) : null;
+    return summarizeCursorComposer(globalDb, resolved.id, probe.globalDb, cwd);
+  } finally {
+    globalDb.close();
+  }
+}
+
 // ------------- filesystem layout -------------
 
+/**
+ * Cursor (Electron) stores its user data in the OS-standard per-user dir:
+ *   - Windows: %APPDATA%\Cursor\User        (typically ~/AppData/Roaming)
+ *   - macOS:   ~/Library/Application Support/Cursor/User
+ *   - Linux:   $XDG_CONFIG_HOME/Cursor/User (default: ~/.config)
+ * Only the Windows path has been end-to-end tested; mac/linux paths are the
+ * Electron convention — not guaranteed to match Cursor's exact layout.
+ */
 function cursorPaths(): Probe {
-  const base = join(homedir(), "AppData", "Roaming", "Cursor", "User");
+  const base = join(cursorUserDir(), "User");
   return {
     globalDb: join(base, "globalStorage", "state.vscdb"),
     workspaceRoot: join(base, "workspaceStorage"),
   };
+}
+
+function cursorUserDir(): string {
+  const plat = platform();
+  if (plat === "win32") {
+    const appData = process.env.APPDATA ?? join(homedir(), "AppData", "Roaming");
+    return join(appData, "Cursor");
+  }
+  if (plat === "darwin") {
+    return join(homedir(), "Library", "Application Support", "Cursor");
+  }
+  // linux (and other posix): respect XDG_CONFIG_HOME if set.
+  const xdg = process.env.XDG_CONFIG_HOME ?? join(homedir(), ".config");
+  return join(xdg, "Cursor");
 }
 
 type CursorWorkspace = { hash: string; dir: string; folderUri: string; dbPath: string };

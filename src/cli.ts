@@ -90,10 +90,12 @@ program
   .description("emit a primer prompt for a target tool")
   .option("--tool <tool>", "target tool (claude-code, cursor, codex, gemini, generic)", "generic")
   .option("--max-chars <n>", "truncate to fit", (v) => parseInt(v, 10))
+  .option("--compact", "emit a task-focused primer (< 2k chars) instead of the full artifact")
   .action(async (opts) => {
     await prime({
       tool: opts.tool,
       maxChars: opts.maxChars,
+      compact: opts.compact,
     });
   });
 
@@ -143,7 +145,8 @@ program
 program
   .command("ingest")
   .description("read a past AI-agent session and emit a structured summary for populating .handoff/")
-  .option("--from <tool>", "source tool (claude-code | cursor | codex | gemini)", "claude-code")
+  .option("--from <tool>", "source tool (claude-code | cursor | codex | gemini)")
+  .option("--all", "ingest the most recent session from every source and concatenate")
   .option("--session <id>", "session id (or 'latest')", "latest")
   .option("--list", "list recent sessions instead of ingesting")
   .option("--out <path>", "write to file instead of stdout")
@@ -151,6 +154,7 @@ program
   .action(async (opts) => {
     await ingest({
       from: opts.from,
+      all: opts.all,
       session: opts.session,
       list: opts.list,
       out: opts.out,

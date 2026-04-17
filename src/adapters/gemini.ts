@@ -112,6 +112,30 @@ export async function ingestGemini(opts: GeminiIngestOpts): Promise<void> {
   await emitOutput(output, opts.out);
 }
 
+/**
+ * Find the most-recent project-scoped Gemini chat for `project` and return
+ * its rendered summary. Returns `null` when Gemini isn't installed, no
+ * saved chats exist, or the project isn't registered in `projects.json`.
+ * Used by `handoff ingest --all`.
+ */
+export async function buildGeminiSummary(opts: { project: string; session?: string }): Promise<string | null> {
+  const probe = geminiPaths();
+  if (!(await exists(probe.base))) return null;
+  const mapping = await readProjectsJson(probe.projectsJson);
+  const hash = await resolveProjectHash(mapping, opts.project, probe.base);
+  if (!hash) return null;
+  const sessionDir = join(probe.base, "tmp", hash);
+  const chatsDir = join(sessionDir, "chats");
+  const checkpointsDir = join(sessionDir, "checkpoints");
+  const sessionId = opts.session ?? "latest";
+  const resolved = await resolveGeminiSessionFile(chatsDir, checkpointsDir, sessionId);
+  if (!resolved) return null;
+  const cwd = await readProjectRoot(sessionDir);
+  const messages = await loadGeminiChatFile(resolved);
+  if (messages === null) return null;
+  return summarizeGeminiChat(resolved, messages, cwd);
+}
+
 // ------------- filesystem layout -------------
 
 function geminiPaths(): Probe {

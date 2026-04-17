@@ -129,8 +129,10 @@ ${"```"}
 When picking up work from another tool:
 
 ${"```"}bash
-handoff prime --tool cursor | pbcopy   # macOS
-handoff prime --tool cursor | clip     # Windows
+handoff prime --tool cursor | pbcopy    # macOS
+handoff prime --tool cursor | clip      # Windows
+handoff prime --tool cursor | wl-copy   # Linux (Wayland)
+handoff prime --tool cursor | xclip -selection clipboard   # Linux (X11)
 ${"```"}
 
 Then paste into a Cursor chat as your first message.

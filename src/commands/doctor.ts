@@ -6,7 +6,7 @@ import { resolveHandoffPaths } from "../format/paths.js";
 import { exists, readJson, readOrEmpty } from "../util/fs.js";
 import { collectGitState } from "../util/git.js";
 import { SCHEMA_VERSION } from "../format/types.js";
-import type { Meta } from "../format/types.js";
+import { loadMeta } from "../format/migrate.js";
 
 const run = promisify(execFile);
 
@@ -41,7 +41,7 @@ export async function doctor(opts: { cwd?: string } = {}): Promise<void> {
 
   // 2. meta.json schema version
   if (handoffPresent) {
-    const meta = await readJson<Meta>(paths.meta);
+    const meta = await loadMeta(paths.meta);
     if (!meta) {
       projectChecks.push({
         level: "warn",
@@ -106,7 +106,7 @@ export async function doctor(opts: { cwd?: string } = {}): Promise<void> {
     globalChecks.push({
       level: "warn",
       label: "`handoff` not found on PATH",
-      detail: "run `npm link` from the repo root or `npm i -g @handoff/cli`",
+      detail: "run `npm install -g @zohartito/handoff` (or `npm link` from the repo root)",
     });
   } else if (!(await exists(binPath))) {
     globalChecks.push({
@@ -117,12 +117,25 @@ export async function doctor(opts: { cwd?: string } = {}): Promise<void> {
   } else {
     globalChecks.push({ level: "ok", label: `handoff → ${binPath}` });
   }
+  // Note: we intentionally do not network-call the npm registry for a latest-version
+  // check here — keeps `handoff doctor` offline-safe. Run `npm outdated -g @zohartito/handoff`
+  // manually if you want to know.
   printChecks(globalChecks);
   console.log();
 
   // 5. Claude Code hooks
   console.log("## claude code hooks");
   const hookChecks = await checkClaudeHooks(cwd);
+  // Cross-check: hooks are configured but `handoff` isn't on PATH — they will fail silently.
+  const hooksConfigured = hookChecks.some((c) => c.level === "ok" && c.label.includes("hooks installed"));
+  if (hooksConfigured && !binPath) {
+    hookChecks.push({
+      level: "err",
+      label: "hooks configured but `handoff` is not on PATH",
+      detail: "Claude Code will fail to invoke the hooks — install with `npm install -g @zohartito/handoff`",
+    });
+    hasError = true;
+  }
   printChecks(hookChecks);
   console.log();
 

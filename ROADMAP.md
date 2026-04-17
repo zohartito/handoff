@@ -45,16 +45,14 @@ Read past sessions from every major coding tool and fold them back into
 
 ---
 
-## v1.5 — polish (next)
+## v1.5 — polish (shipped, 0.2.0)
 
-Round off the rough edges once v1.0 ships.
-
-- [ ] `handoff ingest --all` — ingest every recent session across every tool for this project
-- [ ] Compact primer mode (< 2k chars for clipboard-limited tools)
-- [ ] `handoff prime --tool codex|gemini` (generic works today; tool-tuned primers are nicer)
-- [ ] Schema migration: bump `meta.json` schemaVersion and auto-migrate v1 → v2 on load
-- [ ] mac + linux validation pass (Windows-first today; no known blockers, just untested)
-- [ ] `.handoff/corrections.md` template includes a starter "don't re-explain the project" rule
+- [x] `handoff ingest --all` — orchestrator across all 4 sources with graceful per-source fallback
+- [x] Compact primer mode — `--compact` keeps task + open loops + latest 3 corrections + latest 3 attempts + 1-line env (< 2k chars typical)
+- [x] Tool-tuned primers for codex + gemini — include per-tool tool-name mappings and framing
+- [x] Schema migration framework (`src/format/migrate.ts`) — `loadMeta` auto-migrates, warns on future versions, safe on corrupt JSON; `CURRENT_SCHEMA_VERSION` still 1, but the hooks are in
+- [x] Cross-platform audit — fixed Cursor user dir (%APPDATA%/Library/Application Support/XDG), linux clipboard cascade (wl-copy → xclip → xsel), platform-conditional case sensitivity for `cwdMatchesProject`; see `CROSS-PLATFORM.md` for what still needs live mac/linux validation
+- [x] `.handoff/corrections.md` template seeded with the "don't re-explain the project" rule
 
 ---
 

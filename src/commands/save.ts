@@ -1,8 +1,8 @@
 import { platform, release, arch, userInfo } from "node:os";
 import { resolveHandoffPaths } from "../format/paths.js";
 import { collectGitState } from "../util/git.js";
-import { exists, readJson, writeJson, writeFileSafe, readOrEmpty } from "../util/fs.js";
-import type { Meta } from "../format/types.js";
+import { exists, writeJson, writeFileSafe, readOrEmpty } from "../util/fs.js";
+import { loadMeta } from "../format/migrate.js";
 
 const AUTO_HEADER = "## Auto";
 const HUMAN_HEADER = "## Human notes";
@@ -17,7 +17,7 @@ export async function save(opts: { cwd?: string } = {}): Promise<void> {
     return;
   }
 
-  const meta = (await readJson<Meta>(paths.meta)) ?? null;
+  const meta = await loadMeta(paths.meta);
   if (meta) {
     meta.updatedAt = new Date().toISOString();
     await writeJson(paths.meta, meta);

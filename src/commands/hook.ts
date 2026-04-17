@@ -1,3 +1,4 @@
+import { platform } from "node:os";
 import { resolveHandoffPaths } from "../format/paths.js";
 import { exists } from "../util/fs.js";
 import { buildPrimer } from "./prime.js";
@@ -59,11 +60,18 @@ export async function hook(opts: HookOpts): Promise<void> {
     });
     console.error(
       "\n👋 rate limit hit. your handoff is fresh.\n" +
-        "   run: handoff prime --tool codex | clip\n" +
+        `   run: handoff prime --tool codex | ${clipHintForPlatform()}\n` +
         "   then paste into Codex (or Cursor, Gemini, etc.)\n",
     );
     return;
   }
+}
+
+function clipHintForPlatform(): string {
+  const plat = platform();
+  if (plat === "win32") return "clip";
+  if (plat === "darwin") return "pbcopy";
+  return "wl-copy";
 }
 
 function writeStdout(s: string): Promise<void> {

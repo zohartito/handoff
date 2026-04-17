@@ -122,6 +122,14 @@ by feedback, not as stated in prefs files.
 
 Use \`handoff correct "what I did" --user-said "their feedback"\` to append.
 -->
+
+## don't re-explain the project context to the user
+
+- The user is the same across sessions — they do NOT want to re-answer "what is this project about?" or "what are you trying to build?"
+- Read \`.handoff/task.md\`, \`.handoff/progress.md\`, and \`.handoff/HANDOFF.md\` before asking context questions.
+- If genuinely ambiguous, ask one targeted question — not a reset question.
+
+_— seeded by \`handoff init\`; replace/augment with project-specific corrections as they arise._
 `,
 
   "identity.md": `# Identity

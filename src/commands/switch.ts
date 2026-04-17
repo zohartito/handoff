@@ -80,33 +80,54 @@ export async function switchTool(opts: SwitchOpts): Promise<void> {
 function clipCommandName(): string {
   if (platform() === "win32") return "clip";
   if (platform() === "darwin") return "pbcopy";
-  return "xclip -selection clipboard  (or wl-copy)";
+  return "wl-copy  (or xclip -selection clipboard, or xsel --clipboard)";
 }
 
 /**
  * Pipe the string to the platform's clipboard utility via stdin.
- * Returns true if the utility exited cleanly.
+ * Returns true if a utility exited cleanly.
+ *
+ * On Linux we try a prioritized list: wl-copy (Wayland) → xclip (X11) →
+ * xsel (X11 fallback). First one that's on PATH and exits 0 wins.
  */
 function writeClipboard(content: string): Promise<boolean> {
+  const candidates = clipCommands();
+  return tryClipCandidates(candidates, content);
+}
+
+async function tryClipCandidates(
+  candidates: Array<[string, string[]]>,
+  content: string,
+): Promise<boolean> {
+  for (const [cmd, args] of candidates) {
+    const ok = await tryOneClip(cmd, args, content);
+    if (ok) return true;
+  }
+  return false;
+}
+
+function tryOneClip(cmd: string, args: string[], content: string): Promise<boolean> {
   return new Promise((resolve) => {
-    const [cmd, args] = clipCommand();
-    if (!cmd) {
+    try {
+      const child = spawn(cmd, args, { stdio: ["pipe", "ignore", "ignore"] });
+      child.on("error", () => resolve(false));
+      child.on("exit", (code) => resolve(code === 0));
+      child.stdin.end(content, "utf8");
+    } catch {
       resolve(false);
-      return;
     }
-    const child = spawn(cmd, args, { stdio: ["pipe", "ignore", "ignore"] });
-    child.on("error", () => resolve(false));
-    child.on("exit", (code) => resolve(code === 0));
-    child.stdin.end(content, "utf8");
   });
 }
 
-function clipCommand(): [string, string[]] | [null, null] {
-  if (platform() === "win32") return ["clip", []];
-  if (platform() === "darwin") return ["pbcopy", []];
-  // Linux: prefer wl-copy (Wayland) then xclip (X11). Return xclip; if it's
-  // not installed the spawn errors out and writeClipboard returns false.
-  return ["xclip", ["-selection", "clipboard"]];
+function clipCommands(): Array<[string, string[]]> {
+  if (platform() === "win32") return [["clip", []]];
+  if (platform() === "darwin") return [["pbcopy", []]];
+  // Linux: Wayland first (most modern distros), then X11 fallbacks.
+  return [
+    ["wl-copy", []],
+    ["xclip", ["-selection", "clipboard"]],
+    ["xsel", ["--clipboard", "--input"]],
+  ];
 }
 
 // ------------- tool launch -------------

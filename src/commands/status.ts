@@ -1,6 +1,6 @@
 import { resolveHandoffPaths } from "../format/paths.js";
-import { exists, readJson, readOrEmpty } from "../util/fs.js";
-import type { Meta } from "../format/types.js";
+import { exists, readOrEmpty } from "../util/fs.js";
+import { loadMeta } from "../format/migrate.js";
 
 type Row = { file: string; status: string; size: number };
 
@@ -15,7 +15,7 @@ export async function status(opts: { cwd?: string } = {}): Promise<void> {
     return;
   }
 
-  const meta = await readJson<Meta>(paths.meta);
+  const meta = await loadMeta(paths.meta);
   if (meta) {
     console.log("meta:");
     console.log("  source:     ", meta.sourceTool);

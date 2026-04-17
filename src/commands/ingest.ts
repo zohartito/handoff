@@ -1,15 +1,16 @@
 import { promises as fs } from "node:fs";
-import { homedir } from "node:os";
+import { homedir, platform } from "node:os";
 import { join, resolve } from "node:path";
 import { exists, readOrEmpty } from "../util/fs.js";
-import { ingestCursor } from "../adapters/cursor.js";
-import { ingestCodex } from "../adapters/codex.js";
-import { ingestGemini } from "../adapters/gemini.js";
+import { ingestCursor, buildCursorSummary } from "../adapters/cursor.js";
+import { ingestCodex, buildCodexSummary } from "../adapters/codex.js";
+import { ingestGemini, buildGeminiSummary } from "../adapters/gemini.js";
 
 export type IngestFrom = "claude-code" | "cursor" | "codex" | "gemini";
 
 export type IngestOpts = {
-  from: IngestFrom;
+  from?: IngestFrom;
+  all?: boolean;
   session?: string; // session id or "latest"
   list?: boolean;
   out?: string;
@@ -31,11 +32,26 @@ export async function ingest(opts: IngestOpts): Promise<void> {
   const cwd = opts.cwd ?? process.cwd();
   const project = opts.project ? resolve(opts.project) : cwd;
 
-  if (opts.from === "claude-code") {
+  if (opts.all && opts.from) {
+    console.error(
+      `--all and --from are mutually exclusive. Use one or the other.`,
+    );
+    process.exitCode = 1;
+    return;
+  }
+
+  if (opts.all) {
+    await ingestAll(project, opts.out);
+    return;
+  }
+
+  const from = opts.from ?? "claude-code";
+
+  if (from === "claude-code") {
     await ingestClaudeCode(opts, project);
     return;
   }
-  if (opts.from === "cursor") {
+  if (from === "cursor") {
     await ingestCursor({
       session: opts.session,
       list: opts.list,
@@ -44,7 +60,7 @@ export async function ingest(opts: IngestOpts): Promise<void> {
     });
     return;
   }
-  if (opts.from === "codex") {
+  if (from === "codex") {
     await ingestCodex({
       session: opts.session,
       list: opts.list,
@@ -53,7 +69,7 @@ export async function ingest(opts: IngestOpts): Promise<void> {
     });
     return;
   }
-  if (opts.from === "gemini") {
+  if (from === "gemini") {
     await ingestGemini({
       session: opts.session,
       list: opts.list,
@@ -64,7 +80,7 @@ export async function ingest(opts: IngestOpts): Promise<void> {
   }
 
   console.error(
-    `ingest --from ${opts.from} not supported yet. known sources: claude-code, cursor, codex, gemini.`,
+    `ingest --from ${from} not supported yet. known sources: claude-code, cursor, codex, gemini.`,
   );
   process.exitCode = 1;
 }
@@ -102,6 +118,86 @@ async function ingestClaudeCode(opts: IngestOpts, project: string): Promise<void
 
   const output = await summarizeSession(sessionFile);
   await emitOutput(output, opts.out);
+}
+
+/**
+ * Find the most-recent project-scoped Claude Code session for `project` and
+ * return its rendered summary. Returns `null` when no such session exists
+ * (e.g. Claude Code never ran in this project). Used by `--all`.
+ */
+export async function buildClaudeCodeSummary(project: string): Promise<string | null> {
+  const projectDirs = await findClaudeProjectDirs(project);
+  if (projectDirs.length === 0) return null;
+  const sessionFile = await resolveSessionFileAcross(projectDirs, "latest", project);
+  if (!sessionFile) return null;
+  return await summarizeSession(sessionFile);
+}
+
+export type IngestAllSource = {
+  label: string;
+  build: () => Promise<string | null>;
+};
+
+/**
+ * Build the list of source adapters that `--all` walks. Tests can substitute
+ * their own sources via `ingestAll`'s optional `sources` parameter, or call
+ * `renderCombinedAll` directly.
+ */
+export function defaultIngestAllSources(project: string): IngestAllSource[] {
+  return [
+    { label: "Claude Code", build: () => buildClaudeCodeSummary(project) },
+    { label: "Cursor", build: () => buildCursorSummary({ project }) },
+    { label: "Codex", build: () => buildCodexSummary({ project }) },
+    { label: "Gemini", build: () => buildGeminiSummary({ project }) },
+  ];
+}
+
+/**
+ * Compose the combined `--all` markdown from the per-source results.
+ *
+ * Pure orchestration, no file I/O. Sources that returned `null`, an empty
+ * string, or threw become a short stub section so one bad adapter doesn't
+ * break the whole run.
+ */
+export async function renderCombinedAll(
+  project: string,
+  sources: IngestAllSource[],
+): Promise<string> {
+  const header = `# Handoff Ingest — All Sources\n\n- **Project**: \`${project}\``;
+  const bodies: string[] = [];
+  for (const src of sources) {
+    try {
+      const md = await src.build();
+      if (md === null || md.trim().length === 0) {
+        bodies.push(`## ${src.label}\n\n_(no recent session found for this project)_`);
+      } else {
+        bodies.push(md.replace(/\s+$/, ""));
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      bodies.push(`## ${src.label}\n\n_(adapter failed: ${msg})_`);
+    }
+  }
+  const combined = [header, ...bodies].join("\n\n---\n\n");
+  return combined.endsWith("\n") ? combined : combined + "\n";
+}
+
+/**
+ * `handoff ingest --all` orchestrator.
+ *
+ * Loops through each supported source in a fixed order and appends the most
+ * recent project-scoped summary to a combined markdown document. Sources that
+ * have no sessions (or fail to load) contribute a short stub section instead
+ * of crashing the run — one bad adapter must not break the rest.
+ */
+export async function ingestAll(
+  project: string,
+  out: string | undefined,
+  sources?: IngestAllSource[],
+): Promise<void> {
+  const effectiveSources = sources ?? defaultIngestAllSources(project);
+  const combined = await renderCombinedAll(project, effectiveSources);
+  await emitOutput(combined, out);
 }
 
 export async function emitOutput(output: string, outFile: string | undefined): Promise<void> {
@@ -247,14 +343,35 @@ async function resolveSessionFile(
   return match ? join(projectDir, match) : null;
 }
 
-function normalizeForCompare(p: string): string {
-  return p.toLowerCase().replace(/[\\/]+$/, "").replace(/\\/g, "/");
+/**
+ * Platform-conditional path normalization for comparison.
+ *
+ * On Windows + macOS the default FS is case-insensitive (though case-preserving
+ * on HFS+/APFS) — we lowercase so `C:\Foo` and `c:\foo` compare equal.
+ * On Linux the FS is case-sensitive — `/Users/foo` and `/Users/Foo` are two
+ * different directories; we must not collapse them.
+ *
+ * Exported as a pure function so tests can exercise both branches without
+ * stubbing `os.platform()` globally.
+ */
+export function normalizeForCompare(
+  p: string,
+  plat: NodeJS.Platform = platform(),
+): string {
+  const caseInsensitive = plat === "win32" || plat === "darwin";
+  let n = p.replace(/[\\/]+$/, "").replace(/\\/g, "/");
+  if (caseInsensitive) n = n.toLowerCase();
+  return n;
 }
 
-export function cwdMatchesProject(cwd: string | null, projectPath: string): boolean {
+export function cwdMatchesProject(
+  cwd: string | null,
+  projectPath: string,
+  plat: NodeJS.Platform = platform(),
+): boolean {
   if (!cwd) return false;
-  const c = normalizeForCompare(cwd);
-  const p = normalizeForCompare(projectPath);
+  const c = normalizeForCompare(cwd, plat);
+  const p = normalizeForCompare(projectPath, plat);
   return c === p || c.startsWith(p + "/");
 }
 

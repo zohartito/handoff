@@ -124,6 +124,38 @@ export async function ingestCodex(opts: CodexIngestOpts): Promise<void> {
   await emitOutput(output, opts.out);
 }
 
+/**
+ * Find the most-recent project-scoped Codex rollout for `project` and
+ * return its rendered summary. Returns `null` when Codex isn't installed
+ * or no rollout's session_meta.cwd matches this project. Used by `--all`.
+ */
+export async function buildCodexSummary(opts: { project: string; session?: string }): Promise<string | null> {
+  const codexHome = codexHomeDir();
+  const sessionsRoot = join(codexHome, "sessions");
+  if (!(await exists(sessionsRoot))) return null;
+  const indexPath = join(codexHome, "session_index.jsonl");
+  const threadNames = await readSessionIndex(indexPath);
+  const allRollouts = await listRolloutFiles(sessionsRoot);
+  const withMeta: CodexRolloutInfo[] = [];
+  for (const r of allRollouts) {
+    const meta = await readSessionMeta(r.file);
+    withMeta.push({
+      id: meta?.id ?? idFromFilename(r.file) ?? "",
+      file: r.file,
+      mtime: r.mtime,
+      size: r.size,
+      cwd: meta?.cwd ?? null,
+      cliVersion: meta?.cliVersion ?? null,
+      threadName: meta?.id ? threadNames.get(meta.id) ?? null : null,
+    });
+  }
+  const scoped = scopeByProject(withMeta, opts.project);
+  if (scoped.length === 0) return null;
+  const resolved = resolveCodexRollout(scoped, opts.session ?? "latest");
+  if (!resolved) return null;
+  return await summarizeCodexSession(resolved.file);
+}
+
 // ------------- filesystem layout -------------
 
 function codexHomeDir(): string {
