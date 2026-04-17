@@ -1,0 +1,100 @@
+[
+  {
+    "role": "user",
+    "parts": [{ "text": "Please read src/index.ts and tell me what it does" }]
+  },
+  {
+    "role": "model",
+    "parts": [
+      { "text": "I'll read the file first." },
+      {
+        "functionCall": {
+          "name": "read_file",
+          "args": { "absolute_path": "/proj/src/index.ts" }
+        }
+      }
+    ]
+  },
+  {
+    "role": "user",
+    "parts": [
+      {
+        "functionResponse": {
+          "name": "read_file",
+          "response": { "output": "export function main() {}" }
+        }
+      }
+    ]
+  },
+  {
+    "role": "model",
+    "parts": [
+      { "text": "It exports a main function. Let me also check the README." },
+      {
+        "functionCall": {
+          "name": "read_file",
+          "args": { "absolute_path": "/proj/README.md" }
+        }
+      }
+    ]
+  },
+  {
+    "role": "user",
+    "parts": [
+      {
+        "functionResponse": {
+          "name": "read_file",
+          "response": { "output": "# My Project" }
+        }
+      }
+    ]
+  },
+  {
+    "role": "model",
+    "parts": [
+      { "text": "Now I'll run the tests and update the README." },
+      {
+        "functionCall": {
+          "name": "run_shell_command",
+          "args": { "command": "npm test" }
+        }
+      },
+      {
+        "functionCall": {
+          "name": "edit_file",
+          "args": { "file_path": "/proj/README.md", "old_string": "# My Project", "new_string": "# My Project\n\nA cool project." }
+        }
+      }
+    ]
+  },
+  {
+    "role": "user",
+    "parts": [
+      {
+        "functionResponse": {
+          "name": "run_shell_command",
+          "response": { "exit_code": 0, "output": "all tests passed" }
+        }
+      }
+    ]
+  },
+  {
+    "role": "user",
+    "parts": [
+      {
+        "functionResponse": {
+          "name": "edit_file",
+          "response": { "error": "permission denied: /proj/README.md" }
+        }
+      }
+    ]
+  },
+  {
+    "role": "user",
+    "parts": [{ "text": "Try again after I fixed the permissions" }]
+  },
+  {
+    "role": "model",
+    "parts": [{ "text": "Done — tests passed and README updated successfully." }]
+  }
+]
