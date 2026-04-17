@@ -16,8 +16,9 @@
     "dev": "tsx src/cli.ts",
     "build": "tsc",
     "start": "node dist/cli.js",
-    "test": "tsc -p tsconfig.test.json && node --test \"dist/tests/**/*.test.js\"",
-    "test:watch": "node --test --watch \"dist/tests/**/*.test.js\""
+    "test": "tsc -p tsconfig.test.json && node --test \"dist-test/tests/**/*.test.js\"",
+    "test:watch": "node --test --watch \"dist-test/tests/**/*.test.js\"",
+    "prepublishOnly": "rm -rf dist && npm run build"
   },
   "keywords": [
     "ai",
