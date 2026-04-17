@@ -87,7 +87,9 @@ function preambleFor(tool: Tool, meta: Meta | null): string {
     `You are an AI coding agent picking up work that was previously in progress.`,
     `The full handoff artifact is in the \`.handoff/\` directory at the project root.`,
     `Read every section below before taking any action.`,
-    meta ? `\nSource tool: \`${meta.sourceTool}\`. Snapshot updated: ${meta.updatedAt}.` : "",
+    meta && meta.sourceTool && meta.sourceTool !== "unknown"
+      ? `\nSource tool: \`${meta.sourceTool}\`. Snapshot updated: ${meta.updatedAt}.`
+      : "",
   ];
 
   const toolNote: Record<Tool, string> = {

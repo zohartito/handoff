@@ -54,3 +54,11 @@ Use `handoff decide "chose X" --because "reason"` to append.
 
 **considered:** scan bubble.workspaceUris (mostly empty), use composer.createdAt heuristic (unreliable)
 ---
+
+## 2026-04-17T03:48:12.068Z
+**chose:** publish to npm as @zohartito/handoff (scoped)
+
+**because:** all unscoped handoff-* names were squatted
+
+**considered:** handoff-cli, handoffjs, handoff-ai
+---

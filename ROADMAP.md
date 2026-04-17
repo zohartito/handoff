@@ -21,7 +21,7 @@ Scaffolding, lifecycle commands, tool-agnostic primer.
 
 ---
 
-## v1.0 — multi-tool ingest (in progress)
+## v1.0 — multi-tool ingest (shipped)
 
 Read past sessions from every major coding tool and fold them back into
 `.handoff/`.
@@ -32,16 +32,16 @@ Read past sessions from every major coding tool and fold them back into
 - [x] `handoff doctor` — scan project + global install for common issues
 - [x] `handoff uninstall --tool <tool>` — print removal instructions
 - [x] Claude Code hooks (SessionStart / Stop / StopFailure with `rate_limit`) auto-inject the primer
-- [x] Test suite: 17 tests across Claude Code + Cursor adapters, render parity, bug-injection validated
+- [x] Test suite: 74 tests across all 4 adapters, render parity, schema migration, compact primer, cross-platform, bug-injection validated
 - [x] README.md (production, GitHub-ready)
-- [ ] `handoff ingest --from codex` — parse `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`
-- [ ] `handoff ingest --from gemini` — parse `~/.gemini/tmp/<hash>/chats/*.json` (+ JSONL follow-up)
-- [ ] Round-trip cross-tool handoff test (start in tool A, hand off mid-task to tool B, confirm no re-explanation needed)
+- [x] `handoff ingest --from codex` — parse `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`
+- [x] `handoff ingest --from gemini` — parse `~/.gemini/tmp/<hash>/chats/*.json` (+ JSONL follow-up)
+- [x] Round-trip cross-tool handoff test — Codex-validated end-to-end; all 4 primers 4/4; caught one ingest scoping bug that shipped as a 0.1.1 fix
 - [x] LICENSE (MIT)
 - [x] Pick npm package name → `@zohartito/handoff` (scoped; unscoped names all squatted)
 - [x] GitHub repo created at `github.com/zohartito/handoff`
 - [x] First push to GitHub
-- [x] `npm publish --access public` — `@zohartito/handoff@0.1.0` live
+- [x] `npm publish --access public` — `@zohartito/handoff@0.1.0` → `0.1.1` (ingest-scoping fix) → `0.2.0` (v1.5) live
 
 ---
 
@@ -53,6 +53,17 @@ Read past sessions from every major coding tool and fold them back into
 - [x] Schema migration framework (`src/format/migrate.ts`) — `loadMeta` auto-migrates, warns on future versions, safe on corrupt JSON; `CURRENT_SCHEMA_VERSION` still 1, but the hooks are in
 - [x] Cross-platform audit — fixed Cursor user dir (%APPDATA%/Library/Application Support/XDG), linux clipboard cascade (wl-copy → xclip → xsel), platform-conditional case sensitivity for `cwdMatchesProject`; see `CROSS-PLATFORM.md` for what still needs live mac/linux validation
 - [x] `.handoff/corrections.md` template seeded with the "don't re-explain the project" rule
+
+---
+
+## v1.6 — loose ends (small, do when convenient)
+
+Tiny follow-ups caught during v1.5 ship. None block v3; all low-effort.
+
+- [x] Suppress `Source tool: unknown` in primers when `sourceTool` is unset (init without `--from`)
+- [ ] Live mac + linux validation pass — code audit is done (see `CROSS-PLATFORM.md`), but "Requires live testing" items need a real mac/linux box. Specifically: clipboard cascade (wl-copy/xclip/xsel), launcher PATH resolution on snap/flatpak, Cursor FS layout on non-Windows, Claude Code project-path encoding under Unix roots.
+- [ ] System-tray / keyboard-shortcut variant of `handoff switch` (deferred from v2.5; CLI covers 90% of use)
+- [ ] Document the "blocked upstream" pre-rate-limit API gap as an explicit roadmap line, not just a README note
 
 ---
 

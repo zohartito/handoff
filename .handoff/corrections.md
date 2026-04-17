@@ -22,3 +22,11 @@ Use `handoff correct "what I did" --user-said "their feedback"` to append.
 
 **lesson:** when user describes multi-actor scenarios, ask whether actors are humans or AI tools before implementing
 ---
+
+## 2026-04-17T03:48:12.179Z
+**agent did:** was going to add cursor MCP server (v2)
+
+**user said:** handoff switch + ingest cursor already cover it
+
+**lesson:** prefer file-based path when it works; don't add moving parts for their own sake
+---
