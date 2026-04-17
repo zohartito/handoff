@@ -45,16 +45,74 @@ the agent-to-agent handoff that eliminates that.
 
 ## Next task (for whichever tool picks this up)
 
-The "Next task for Cursor" listed here previously — building
-`handoff ingest --from cursor` — is done. See `.handoff/decisions.md` for
-the schema reverse-engineering choices and `src/adapters/cursor.ts` for the
-implementation.
+**Current mission: live mac + linux validation pass of `@zohartito/handoff@0.4.0`.**
 
-The next meaningful step is the **round-trip handoff test**:
+This is the last open item on the roadmap (v1.6). The code was platform-audited
+but never exercised on real Apple/Linux hardware. Windows side is fully shipped.
 
-1. Start a small real task here (e.g. "add `--from codex` adapter"),
-   do a few turns in tool A, run `handoff switch <tool-b>`.
-2. In tool B, confirm the primer + `.handoff/` state is enough to continue
-   without asking the user to re-explain.
-3. If anything is missing from the primer or from `ingest`, fix it here,
-   then re-run. That gap is the real product signal.
+This file itself is the handoff proof: Windows-Claude stopped here at
+2026-04-17. Mac-Claude (that's you, if you're reading this on macOS) continues
+from here with full context — no re-explanation.
+
+### What needs to be validated on macOS
+
+1. **Install + version.** `npm install -g @zohartito/handoff@0.4.0`, then
+   `handoff --version` → should print `0.4.0`. If it prints anything else, the
+   `pkgVersion` read in `src/cli.ts` is mis-resolving on macOS (path to
+   `package.json` relative to `dist/cli.js`). File it as a `handoff correct`.
+
+2. **Clipboard cascade.** `cd` into this repo, then
+   `handoff switch codex --no-launch`. It should find `pbcopy` and copy the
+   primer silently. Verify with `pbpaste | head -5` — you should see the
+   primer preamble. If the switch command prints "copy manually", the macOS
+   clipboard branch in `src/commands/switch.ts` isn't firing.
+
+3. **Launcher PATH resolution.** `handoff switch cursor` (drop `--no-launch`)
+   should open Cursor.app if it's installed. Likewise `handoff switch codex`
+   should resolve `codex` on PATH. Log any that fail with `handoff attempt`.
+
+4. **Cursor FS layout.** If you have Cursor installed and have used it at
+   least once, run `handoff ingest --from cursor --list`. It should find
+   sessions at `~/Library/Application Support/Cursor/User/workspaceStorage/`.
+   If it looks in the Windows `%APPDATA%` path instead, `cursorUserDir()` in
+   `src/adapters/cursor.ts` is picking the wrong branch — check `process.platform`.
+
+5. **Claude Code project-path encoding under Unix roots.** The Windows path
+   encoder replaces `:` and `\`. Under Unix (`/Users/you/projects/foo`), the
+   encoder must handle `/` and leading-slash. Run
+   `handoff ingest --from claude-code --list` — if it prints "no sessions
+   found" despite you having used Claude Code in this repo on mac, check
+   `encodeProjectPath()` (or equivalent) in `src/adapters/claude-code.ts`.
+
+6. **Obsidian sync (bonus).** If your Obsidian vault is on the same
+   Synology sync mount, `handoff obsidian sync --vault <vault-path>` should
+   write Daily / Decisions / Rules notes into it. Verify file creation.
+
+### How to report findings back to Windows-Claude
+
+- Every bug: `handoff correct "<what>" --user-said "<mac-specific symptom>" --lesson "<rule>"`.
+- Every successful verification: `handoff attempt "validated X on macOS" --fix "works as specified"`.
+- When the validation round is done: `handoff save`, commit with a
+  `chore(v1.6): mac validation pass` message, push. Synology will sync the
+  `.handoff/` updates back to Windows or push/pull via git — either works.
+
+### If you also have linux (WSL on Windows side, or real linux):
+
+- Same install step. Clipboard test: `handoff switch codex --no-launch` then
+  check `wl-paste` (Wayland) or `xclip -o -selection clipboard` (X11).
+- If none of `wl-copy` / `xclip` / `xsel` are installed, the cascade should
+  end at "copy manually" — not throw.
+
+Once every item above has a `handoff attempt` or `handoff correct` logged,
+bump the roadmap v1.6 validation checkbox to `[x]` and ship a patch release.
+
+### Bonus: untracked CI draft
+
+There's a `.github/workflows/ci.yml` sitting untracked in the repo — a
+GitHub Actions matrix over `ubuntu-latest` / `macos-latest` / `windows-latest`
+that runs the test suite and a pack-and-install smoke test on each. I (Windows-Claude)
+wrote it, then the user pointed out that a real macbook with Synology sync is
+the actual dogfood path for v1.6 — so the workflow is a belt-and-suspenders
+extra, not required. Review it on the mac side; if it looks right, `git add
+.github/workflows/ci.yml` and commit it alongside your validation findings.
+If not, delete it and move on.

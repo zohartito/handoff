@@ -25,7 +25,7 @@ Human notes:
 
 ## Auto
 
-_refreshed: 2026-04-17T03:48:11.891Z_
+_refreshed: 2026-04-17T04:15:14.101Z_
 - os: win32 10.0.26200 (x64)
 - user: zohar_4ta16fp
 - node: v24.14.0
@@ -35,30 +35,31 @@ _refreshed: 2026-04-17T03:48:11.891Z_
 ### git status
 
 ```
-M .handoff/meta.json
- M .handoff/progress.md
- M ROADMAP.md
- M src/commands/prime.ts
+M .handoff/decisions.md
+ M .handoff/environment.md
+ M .handoff/meta.json
+ M .handoff/task.md
+?? .github/
 ```
 
 ### recent commits
 
 ```
+63cdfd8 feat(v4): permanent memory - obsidian sync, cross-project search + patterns (0.4.0)
+3ea546a feat(v2.5/v3): agent-initiated handoffs + concurrency safety (0.3.0)
+1f1f0f0 chore(v1.6): suppress 'Source tool: unknown', refresh own .handoff/, add v1.6 roadmap
 ca0a849 feat(v1.5): ingest --all, compact primer, schema migration, cross-platform
 67e0c2d fix(ingest): scope 'latest' session to requested project path
-d9df16e build: make prepublishOnly cross-platform (use node -e instead of rm -rf)
-a8b9dca build: isolate test build output from publish tarball
-168c400 initial commit: handoff v0.1.0
 ```
 
 ### diff stat
 
 ```
-.handoff/meta.json    |  2 +-
- .handoff/progress.md  | 52 ++++++++++++++++++++++++++++++++++++++++-----------
- ROADMAP.md            | 12 ++++++------
- src/commands/prime.ts |  4 +++-
- 4 files changed, 51 insertions(+), 19 deletions(-)
+.handoff/decisions.md   |  6 ++++
+ .handoff/environment.md | 19 +++++--------
+ .handoff/meta.json      |  2 +-
+ .handoff/task.md        | 73 ++++++++++++++++++++++++++++++++++++++++---------
+ 4 files changed, 74 insertions(+), 26 deletions(-)
 ```
 
 ## Human notes

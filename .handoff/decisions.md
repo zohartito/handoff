@@ -62,3 +62,9 @@ Use `handoff decide "chose X" --because "reason"` to append.
 
 **considered:** handoff-cli, handoffjs, handoff-ai
 ---
+
+## 2026-04-17T04:15:10.146Z
+**chose:** continue v1.6 mac/linux validation on MacBook via Synology sync
+
+**because:** dogfooding the product — handing off between Windows and Mac is literally what this tool exists for
+---
