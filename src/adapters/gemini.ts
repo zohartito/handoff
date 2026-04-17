@@ -109,7 +109,7 @@ export async function ingestGemini(opts: GeminiIngestOpts): Promise<void> {
     return;
   }
   const output = summarizeGeminiChat(resolved, messages, cwd);
-  await emitOutput(output, opts.out);
+  await emitOutput(output, opts.out, opts.project);
 }
 
 /**

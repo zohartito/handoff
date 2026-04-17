@@ -108,16 +108,24 @@ Prints the exact integration instructions for the named tool — the `.claude/se
 
 Internal. Called by the Claude Code hook system. Do not invoke directly unless you're debugging the hook wiring.
 
-### `handoff ingest --from <claude-code|cursor> [--session <id>] [--list] [--out <path>] [--project <path>]`
+### `handoff ingest --from <claude-code|cursor|codex|gemini> [--session <id>] [--list] [--out <path>] [--project <path>]`
 
 Reads past AI agent sessions and produces a structured markdown summary. Useful when you want to seed `.handoff/` from work you've already done in another tool.
 
 - `--from claude-code` reads Claude Code JSONL transcripts directly.
 - `--from cursor` reads Cursor's `state.vscdb` SQLite file (via built-in `node:sqlite`).
+- `--from codex` reads Codex rollout JSONL files from `~/.codex/sessions/...`.
+- `--from gemini` reads Gemini saved chats / checkpoints from `~/.gemini/tmp/...`.
 - `--list` enumerates available sessions instead of ingesting.
 - `--session <id>` picks a specific session; omit to use the most recent.
 - `--out <path>` writes the summary to a file; omit for stdout.
 - `--project <path>` scopes the search to a specific project root.
+
+If the current project already has a `.handoff/` folder and you omit `--out`,
+the summary is also persisted to `.handoff/ingested-context.md`. Future
+`handoff prime` / `handoff switch` calls automatically surface that imported
+context, so the next tool sees the past transcript even before you've manually
+folded it into `task.md`, `progress.md`, etc.
 
 ### `handoff switch <tool> [--no-save] [--no-launch]`
 

@@ -1,7 +1,8 @@
 import { promises as fs } from "node:fs";
 import { homedir, platform } from "node:os";
 import { join, resolve } from "node:path";
-import { exists, readOrEmpty } from "../util/fs.js";
+import { resolveHandoffPaths } from "../format/paths.js";
+import { exists, readOrEmpty, writeFileSafe } from "../util/fs.js";
 import { ingestCursor, buildCursorSummary } from "../adapters/cursor.js";
 import { ingestCodex, buildCodexSummary } from "../adapters/codex.js";
 import { ingestGemini, buildGeminiSummary } from "../adapters/gemini.js";
@@ -117,7 +118,7 @@ async function ingestClaudeCode(opts: IngestOpts, project: string): Promise<void
   }
 
   const output = await summarizeSession(sessionFile);
-  await emitOutput(output, opts.out);
+  await emitOutput(output, opts.out, project);
 }
 
 /**
@@ -197,14 +198,33 @@ export async function ingestAll(
 ): Promise<void> {
   const effectiveSources = sources ?? defaultIngestAllSources(project);
   const combined = await renderCombinedAll(project, effectiveSources);
-  await emitOutput(combined, out);
+  await emitOutput(combined, out, project);
 }
 
-export async function emitOutput(output: string, outFile: string | undefined): Promise<void> {
-  if (outFile) {
-    await fs.writeFile(outFile, output, "utf8");
-    console.error(`wrote ingest summary → ${outFile}`);
-  } else {
+async function implicitIngestOutFile(project: string | undefined): Promise<string | null> {
+  if (!project) return null;
+  const paths = resolveHandoffPaths(project);
+  if (!(await exists(paths.dir))) return null;
+  return paths.ingestedContext;
+}
+
+export async function emitOutput(
+  output: string,
+  outFile: string | undefined,
+  project?: string,
+): Promise<void> {
+  const implicitOut = outFile ? null : await implicitIngestOutFile(project);
+  const target = outFile ?? implicitOut;
+  const payload = output.endsWith("\n") ? output : output + "\n";
+
+  if (target) {
+    await writeFileSafe(target, payload);
+    console.error(
+      `${outFile ? "wrote ingest summary" : "stored ingest summary"} → ${target}`,
+    );
+  }
+
+  if (!outFile) {
     process.stdout.write(output);
     if (!output.endsWith("\n")) process.stdout.write("\n");
   }

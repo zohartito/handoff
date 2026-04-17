@@ -68,3 +68,11 @@ Use `handoff decide "chose X" --because "reason"` to append.
 
 **because:** dogfooding the product — handing off between Windows and Mac is literally what this tool exists for
 ---
+
+## 2026-04-17T05:17:41.544Z
+**chose:** persist imported ingest summaries in .handoff/ingested-context.md
+
+**because:** switch/prime need transcript-level context after ingest, before task/progress are manually updated
+
+**considered:** stdout-only ingest, LLM auto-populates task/progress from transcript
+---

@@ -22,6 +22,7 @@ below **in order** before taking any action.
 10. `references.md` — URLs and docs that were consulted
 
 Raw logs (read only when you need detail):
+- `ingested-context.md` — imported summary from a past tool session (created by `handoff ingest`)
 - `tool-history.jsonl` — every tool call the prior agent made
 - `transcript.jsonl` — raw conversation turns
 - `files.json` — file manifest with hashes

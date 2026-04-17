@@ -121,7 +121,7 @@ export async function ingestCodex(opts: CodexIngestOpts): Promise<void> {
   }
 
   const output = await summarizeCodexSession(resolved.file);
-  await emitOutput(output, opts.out);
+  await emitOutput(output, opts.out, opts.project);
 }
 
 /**

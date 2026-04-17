@@ -4,6 +4,7 @@ export type HandoffPaths = {
   root: string;
   dir: string;
   handoffMd: string;
+  ingestedContext: string;
   task: string;
   progress: string;
   decisions: string;
@@ -27,6 +28,7 @@ export function resolveHandoffPaths(cwd: string = process.cwd()): HandoffPaths {
     root,
     dir,
     handoffMd: resolve(dir, "HANDOFF.md"),
+    ingestedContext: resolve(dir, "ingested-context.md"),
     task: resolve(dir, "task.md"),
     progress: resolve(dir, "progress.md"),
     decisions: resolve(dir, "decisions.md"),

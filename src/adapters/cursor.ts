@@ -86,7 +86,7 @@ export async function ingestCursor(opts: CursorIngestOpts): Promise<void> {
 
     const cwd = resolved.workspace ? fileUriToPath(resolved.workspace.folderUri) : null;
     const output = summarizeCursorComposer(globalDb, resolved.id, probe.globalDb, cwd);
-    await emitOutput(output, opts.out);
+    await emitOutput(output, opts.out, opts.project);
   } finally {
     globalDb.close();
   }

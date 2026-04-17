@@ -1,9 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  emitOutput,
   ingest,
   ingestAll,
   renderCombinedAll,
@@ -137,6 +138,29 @@ test("ingestAll writes the combined document to --out and accepts a sources over
     // Output file always ends with a trailing newline
     assert.ok(written.endsWith("\n"), "output file should end with newline");
   } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("emitOutput mirrors to stdout and persists to .handoff/ingested-context.md when present", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "handoff-emit-output-"));
+  const handoffDir = join(dir, ".handoff");
+  mkdirSync(handoffDir, { recursive: true });
+
+  const originalWrite = process.stdout.write;
+  let printed = "";
+  (process.stdout as any).write = ((chunk: string | Uint8Array) => {
+    printed += String(chunk);
+    return true;
+  }) as typeof process.stdout.write;
+
+  try {
+    await emitOutput("# Imported\n", undefined, dir);
+    const persisted = readFileSync(join(handoffDir, "ingested-context.md"), "utf8");
+    assert.equal(persisted, "# Imported\n");
+    assert.match(printed, /# Imported/);
+  } finally {
+    (process.stdout as any).write = originalWrite;
     rmSync(dir, { recursive: true, force: true });
   }
 });

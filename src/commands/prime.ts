@@ -69,6 +69,16 @@ export async function buildPrimer(
     body: rateLimitSection(tool, "full"),
   });
 
+  const importedContext = cleanImportedContext(
+    await readOrEmpty(paths.ingestedContext),
+  );
+  if (importedContext) {
+    parts.push({
+      title: "Imported session context",
+      body: importedContext,
+    });
+  }
+
   const sections: Array<{ label: string; path: string }> = [
     { label: "Task", path: paths.task },
     { label: "Progress", path: paths.progress },
@@ -213,6 +223,13 @@ function cleanBody(raw: string): string {
   return s;
 }
 
+function cleanImportedContext(raw: string): string {
+  let s = raw.replace(/<!--[\s\S]*?-->/g, "").trim();
+  s = s.replace(/\n*---\s*\n*_Next step for the reading agent:[\s\S]*$/m, "");
+  s = s.replace(/\n*---\s*$/g, "").trim();
+  return s;
+}
+
 function truncate(s: string, max: number): string {
   if (s.length <= max) return s;
   const head = Math.floor(max * 0.85);
@@ -280,6 +297,17 @@ export async function buildCompactPrimer(
         ? `${taskRaw.slice(0, 500).trimEnd()}...(see .handoff/task.md for full)`
         : taskRaw;
     parts.push(`## Task\n\n${taskBody}`);
+  }
+
+  const importedContext = cleanImportedContext(
+    await readOrEmpty(paths.ingestedContext),
+  );
+  if (importedContext) {
+    parts.push(
+      "## Imported session context\n\n" +
+        "A past-session summary was imported into `.handoff/ingested-context.md`. " +
+        "Read that file if this handoff needs transcript-level context beyond the task/open-loops snapshot.",
+    );
   }
 
   // 2. Open loops — always full (tiny by nature).

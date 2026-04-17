@@ -204,6 +204,30 @@ test("buildCompactPrimer truncates a long task body with a pointer", async () =>
   assert.match(out, /\(see \.handoff\/task\.md for full\)/);
 });
 
+test("buildPrimer includes imported session context when ingest summary exists", async () => {
+  const paths = scaffoldRealisticHandoff();
+  writeFileSync(
+    paths.ingestedContext,
+    `# Claude Code Session: abc12345\n\n## User messages (chronological)\n\n1. [10:00] fix the install path\n`,
+  );
+  const out = await buildPrimer(paths, "codex", Infinity);
+  assert.match(out, /## Imported session context/);
+  assert.match(out, /Claude Code Session: abc12345/);
+  assert.match(out, /fix the install path/);
+});
+
+test("buildCompactPrimer points at imported session context without inlining it", async () => {
+  const paths = scaffoldRealisticHandoff();
+  writeFileSync(
+    paths.ingestedContext,
+    `# Cursor Session: cur12345\n\nImported body\n`,
+  );
+  const out = await buildCompactPrimer(paths, "generic");
+  assert.match(out, /## Imported session context/);
+  assert.match(out, /\.handoff\/ingested-context\.md/);
+  assert.doesNotMatch(out, /Imported body/);
+});
+
 test("codex compact primer contains apply_patch hint", async () => {
   const paths = scaffoldRealisticHandoff();
   const out = await buildCompactPrimer(paths, "codex");
