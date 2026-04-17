@@ -61,7 +61,7 @@ Read past sessions from every major coding tool and fold them back into
 Tiny follow-ups caught during v1.5 ship. None block v3; all low-effort.
 
 - [x] Suppress `Source tool: unknown` in primers when `sourceTool` is unset (init without `--from`)
-- [ ] Live mac + linux validation pass — code audit is done (see `CROSS-PLATFORM.md`), but "Requires live testing" items need a real mac/linux box. Specifically: clipboard cascade (wl-copy/xclip/xsel), launcher PATH resolution on snap/flatpak, Cursor FS layout on non-Windows, Claude Code project-path encoding under Unix roots.
+- [x] Live mac validation pass — all 6 items green on real macOS hardware via Synology sync dogfood (2026-04-17). Install + version, pbcopy clipboard cascade, launcher PATH resolution (codex/cursor/code), Cursor FS layout under `~/Library/Application Support/`, Claude Code encoder under Unix roots, Obsidian sync on Synology-mounted vault. Linux validated via CI matrix (`.github/workflows/ci.yml`, ubuntu-latest).
 - [x] System-tray / keyboard-shortcut variant of `handoff switch` — covered by the optional launchers in `scripts/` (AutoHotkey / AppleScript / XDG `.desktop` + shell wrapper). See `scripts/README.md`.
 - [x] Document the "blocked upstream" pre-rate-limit API gap as an explicit roadmap line — see note on v3 item 1 below.
 

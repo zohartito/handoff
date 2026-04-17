@@ -1,0 +1,101 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: test (${{ matrix.os }}, node ${{ matrix.node }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        node: [20, 22]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - run: npm ci
+      - run: npm run build
+      - name: unit tests
+        run: npm test
+
+  smoke:
+    name: smoke (${{ matrix.os }}, packed install)
+    needs: test
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npm run build
+      - name: pack + install globally
+        shell: bash
+        run: |
+          npm pack
+          TARBALL=$(ls zohartito-handoff-*.tgz | head -1)
+          npm install -g "./$TARBALL"
+          handoff --version
+      - name: init + prime + status (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          mkdir -p /tmp/handoff-smoke && cd /tmp/handoff-smoke
+          handoff init --from claude-code
+          handoff status
+          handoff prime --tool claude-code > /tmp/primer.txt
+          test -s /tmp/primer.txt
+          handoff prime --tool claude-code --compact > /tmp/compact.txt
+          test -s /tmp/compact.txt
+          handoff prime --tool claude-code --subagent > /tmp/subagent.txt
+          test -s /tmp/subagent.txt
+          handoff attempt "tried x" --error "boom" --fix "y"
+          handoff decide "go with A" --because "B was worse"
+          handoff correct "misread file" --user-said "re-read it"
+          handoff doctor || true
+          handoff search "tried" --root /tmp/handoff-smoke
+          handoff patterns --root /tmp/handoff-smoke --top 3
+      - name: init + prime + status (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $tmp = Join-Path $env:RUNNER_TEMP "handoff-smoke"
+          New-Item -ItemType Directory -Force -Path $tmp | Out-Null
+          Set-Location $tmp
+          handoff init --from claude-code
+          handoff status
+          handoff prime --tool claude-code | Out-File -Encoding utf8 primer.txt
+          if ((Get-Item primer.txt).Length -eq 0) { throw "primer empty" }
+          handoff prime --tool claude-code --compact | Out-File -Encoding utf8 compact.txt
+          handoff prime --tool claude-code --subagent | Out-File -Encoding utf8 subagent.txt
+          handoff attempt "tried x" --error "boom" --fix "y"
+          handoff decide "go with A" --because "B was worse"
+          handoff correct "misread file" --user-said "re-read it"
+          try { handoff doctor } catch { }
+          handoff search "tried" --root $tmp
+          handoff patterns --root $tmp --top 3
+      - name: clipboard cascade presence check (Linux only)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          echo "checking which clipboard tools are available on ubuntu-latest:"
+          which wl-copy || echo "  wl-copy: missing (expected in headless runner)"
+          which xclip || echo "  xclip: missing (expected in headless runner)"
+          which xsel || echo "  xsel: missing (expected in headless runner)"
+          echo "cascade falls through to 'copy manually' instructions on headless — smoke-exercised via handoff switch --no-launch"
+          mkdir -p /tmp/clip-test && cd /tmp/clip-test
+          handoff init --from claude-code
+          # --no-launch skips the tool spawn, still attempts clipboard and reports
+          handoff switch codex --no-launch || true
