@@ -8,6 +8,7 @@ import {
   summarizeSession,
   renderMarkdown,
   humanDuration,
+  cwdMatchesProject,
   type RenderCtx,
 } from "../src/commands/ingest.js";
 
@@ -69,6 +70,28 @@ test("summarizeSession skips malformed JSONL lines without crashing", async () =
   // Also sanity-check: user/assistant counts weren't corrupted by the bad line.
   assert.match(out, /\*\*User messages\*\*: 2/);
   assert.match(out, /\*\*Assistant turns\*\*: 3/);
+});
+
+test("cwdMatchesProject: exact and descendant paths match, unrelated paths do not", () => {
+  const proj = "C:\\Users\\zohar_4ta16fp\\handoff";
+  // exact match (same case)
+  assert.equal(cwdMatchesProject("C:\\Users\\zohar_4ta16fp\\handoff", proj), true);
+  // case-insensitive (Windows paths)
+  assert.equal(cwdMatchesProject("c:\\users\\zohar_4ta16fp\\handoff", proj), true);
+  // trailing slash tolerated
+  assert.equal(cwdMatchesProject("C:\\Users\\zohar_4ta16fp\\handoff\\", proj), true);
+  // descendant
+  assert.equal(cwdMatchesProject("C:\\Users\\zohar_4ta16fp\\handoff\\src", proj), true);
+  // forward-slash mix
+  assert.equal(cwdMatchesProject("C:/Users/zohar_4ta16fp/handoff", proj), true);
+  // parent is NOT a match — this is the bug Codex found
+  assert.equal(cwdMatchesProject("C:\\Users\\zohar_4ta16fp", proj), false);
+  // sibling is not a match
+  assert.equal(cwdMatchesProject("C:\\Users\\zohar_4ta16fp\\other", proj), false);
+  // prefix-only (no separator) is not a match: /foo/handoff-extra should NOT match /foo/handoff
+  assert.equal(cwdMatchesProject("C:\\Users\\zohar_4ta16fp\\handoff-extra", proj), false);
+  // null cwd never matches
+  assert.equal(cwdMatchesProject(null, proj), false);
 });
 
 test("humanDuration formats minutes and hours correctly", () => {

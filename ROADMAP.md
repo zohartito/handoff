@@ -40,8 +40,8 @@ Read past sessions from every major coding tool and fold them back into
 - [x] LICENSE (MIT)
 - [x] Pick npm package name → `@zohartito/handoff` (scoped; unscoped names all squatted)
 - [x] GitHub repo created at `github.com/zohartito/handoff`
-- [ ] First push to GitHub
-- [ ] `npm publish --access public`
+- [x] First push to GitHub
+- [x] `npm publish --access public` — `@zohartito/handoff@0.1.0` live
 
 ---
 

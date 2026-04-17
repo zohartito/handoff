@@ -87,7 +87,7 @@ async function ingestClaudeCode(opts: IngestOpts, project: string): Promise<void
   }
 
   const sessionId = opts.session ?? "latest";
-  const sessionFile = await resolveSessionFileAcross(projectDirs, sessionId);
+  const sessionFile = await resolveSessionFileAcross(projectDirs, sessionId, project);
   if (!sessionFile) {
     const summaries = await listSessionsAcross(projectDirs);
     const ids = summaries.slice(0, 5).map((s) => s.id.slice(0, 8)).join(", ");
@@ -247,12 +247,30 @@ async function resolveSessionFile(
   return match ? join(projectDir, match) : null;
 }
 
+function normalizeForCompare(p: string): string {
+  return p.toLowerCase().replace(/[\\/]+$/, "").replace(/\\/g, "/");
+}
+
+export function cwdMatchesProject(cwd: string | null, projectPath: string): boolean {
+  if (!cwd) return false;
+  const c = normalizeForCompare(cwd);
+  const p = normalizeForCompare(projectPath);
+  return c === p || c.startsWith(p + "/");
+}
+
 async function resolveSessionFileAcross(
   projectDirs: string[],
   sessionId: string,
+  projectPath?: string,
 ): Promise<string | null> {
   if (sessionId === "latest") {
     const sessions = await listSessionsAcross(projectDirs);
+    // Prefer sessions whose logged cwd actually matches the requested project.
+    // Without this filter, a parent-dir session (newer but wrong scope) wins.
+    if (projectPath) {
+      const scoped = sessions.filter((s) => cwdMatchesProject(s.cwd, projectPath));
+      if (scoped.length > 0) return scoped[0].file;
+    }
     return sessions[0]?.file ?? null;
   }
   for (const d of projectDirs) {
