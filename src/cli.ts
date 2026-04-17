@@ -1,5 +1,8 @@
 #!/usr/bin/env node
 import { Command } from "commander";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
 import { init } from "./commands/init.js";
 import { status } from "./commands/status.js";
 import { attempt } from "./commands/attempt.js";
@@ -13,13 +16,26 @@ import { hook } from "./commands/hook.js";
 import { ingest } from "./commands/ingest.js";
 import { switchTool } from "./commands/switch.js";
 import { doctor } from "./commands/doctor.js";
+import { obsidian } from "./commands/obsidian.js";
+import { search } from "./commands/search.js";
+import { patterns } from "./commands/patterns.js";
 
 const program = new Command();
+
+const pkgVersion = (() => {
+  try {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const pkg = JSON.parse(readFileSync(join(here, "..", "package.json"), "utf8"));
+    return typeof pkg.version === "string" ? pkg.version : "0.0.0";
+  } catch {
+    return "0.0.0";
+  }
+})();
 
 program
   .name("handoff")
   .description("Portable agent state across AI coding tools")
-  .version("0.1.0");
+  .version(pkgVersion);
 
 program
   .command("init")
@@ -161,6 +177,50 @@ program
       list: opts.list,
       out: opts.out,
       project: opts.project,
+    });
+  });
+
+const obsidianCmd = program
+  .command("obsidian")
+  .description("sync .handoff/ state into an Obsidian vault (permanent memory across projects)");
+
+obsidianCmd
+  .command("sync")
+  .description("write Daily/Decisions/Rules notes from the current project's .handoff/ into the vault")
+  .option("--vault <path>", "vault path (falls back to HANDOFF_OBSIDIAN_VAULT)")
+  .option("--project <path>", "project path (default: cwd)")
+  .action(async (opts) => {
+    try {
+      await obsidian({ vault: opts.vault, project: opts.project });
+    } catch (err) {
+      console.error(err instanceof Error ? err.message : String(err));
+      process.exitCode = 1;
+    }
+  });
+
+program
+  .command("search <query>")
+  .description("search every .handoff/ folder on this machine for a string")
+  .option("--limit <n>", "max results (default: 20)", (v) => parseInt(v, 10))
+  .option("--root <path>", "override search root (repeatable)", (v, acc: string[]) => acc.concat([v]), [] as string[])
+  .option("--case-sensitive", "exact-case match")
+  .action(async (query, opts) => {
+    await search(query, {
+      roots: opts.root && opts.root.length > 0 ? opts.root : undefined,
+      limit: opts.limit,
+      caseSensitive: opts.caseSensitive,
+    });
+  });
+
+program
+  .command("patterns")
+  .description("scan every .handoff/ on this machine and report cross-project themes")
+  .option("--top <n>", "top-N correction themes to show (default 20)", (v) => parseInt(v, 10))
+  .option("--root <path>", "override search root (repeatable)", (v, acc: string[]) => acc.concat(v), [] as string[])
+  .action(async (opts) => {
+    await patterns({
+      top: Number.isFinite(opts.top) ? opts.top : undefined,
+      roots: opts.root && opts.root.length > 0 ? opts.root : undefined,
     });
   });
 

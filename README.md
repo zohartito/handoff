@@ -129,6 +129,24 @@ One-shot handoff. Saves current state, builds a tool-specific primer, copies it 
 
 Supported targets: `claude-code`, `cursor`, `codex`, `gemini`, `generic`.
 
+### `handoff obsidian sync [--vault <path>] [--project <path>]`
+
+Writes the current project's `.handoff/` content into an Obsidian vault so your session state survives as permanent cross-project memory. Produces:
+
+- `Daily/YYYY-MM-DD.md` — appends one `## handoff: <project> — HH:MM` block per run (idempotent within the same minute).
+- `Decisions/YYYY-MM-DD_<project>_<slug>.md` — one note per decision entry; updates in place if the entry body changes.
+- `Rules/<project>__<slug>.md` — one note per correction (append-only rulebook).
+
+Vault resolution: `--vault` wins over `HANDOFF_OBSIDIAN_VAULT`. No vault configured → error.
+
+### `handoff search <query> [--limit <n>] [--root <path>...] [--case-sensitive]`
+
+Greps every `.handoff/` folder on the machine for `<query>` and returns ranked results grouped by project. Default roots: `$HOME` plus common code dirs (`~/code`, `~/repos`, `~/dev`, `~/projects`, `~/src`, `~/work`, `~/Documents/GitHub`). Override with `--root` (repeatable) or `HANDOFF_SEARCH_ROOTS` (colon/semicolon separated). Ranking: exact-word > project recency > file order.
+
+### `handoff patterns [--top <n>] [--root <path>...]`
+
+Aggregates correction themes, failure modes, and tool usage across every `.handoff/` on the machine. Uses the same discovery roots as `search`. Tokenizes corrections/attempts (unigrams + bigrams, stopwords filtered), tags each theme with the project languages it appeared in, and reports tool-usage counts. Useful for spotting recurring mistakes you keep correcting LLMs about.
+
 ## File format
 
 A `.handoff/` directory looks like this:

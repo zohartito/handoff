@@ -115,15 +115,25 @@ The real unlock: the agent itself decides it's time to hand off, not the user.
 
 ---
 
-## v4 — permanent memory (planned)
+## v4 — permanent memory (shipped, 0.4.0)
 
 Right now `.handoff/` is per-project and ephemeral. v4 is "you never lose
 context across projects either."
 
-- [ ] Obsidian vault integration — every session summary lands as a daily
-  note, every decision a Decisions/ entry, every correction a rule
-- [ ] `handoff search "<query>"` across all projects' `.handoff/`
-- [ ] Auto-extract cross-project patterns ("this user prefers X in language Y")
+- [x] Obsidian vault integration — `handoff obsidian sync` writes the current
+  project's `.handoff/` into an Obsidian vault as `Daily/YYYY-MM-DD.md`
+  (append-if-new-block), `Decisions/YYYY-MM-DD_<project>_<slug>.md` (one per
+  decision entry), and `Rules/<project>__<slug>.md` (one per correction,
+  append-only rulebook). Vault resolved via `--vault` or
+  `HANDOFF_OBSIDIAN_VAULT`.
+- [x] `handoff search "<query>"` scans every `.handoff/` folder on the
+  machine (default roots: home + common code dirs; override via `--root` or
+  `HANDOFF_SEARCH_ROOTS`). Ranks exact-word > recency > file order.
+- [x] Cross-project patterns: `handoff patterns` aggregates correction-themes
+  and failure-modes (unigram + bigram frequency, stopwords filtered) across
+  every `.handoff/` and tags each theme with the languages it appeared in
+  (python/node/rust/go/ruby/php/unknown via project-root file detection).
+  Also reports tool-usage counts across projects.
 
 ---
 
