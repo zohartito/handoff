@@ -17,7 +17,7 @@ Scaffolding, lifecycle commands, tool-agnostic primer.
 - [x] `handoff correct` — log an agent mistake + the rule learned
 - [x] `handoff prime --tool <tool>` — emit a tool-shaped primer
 - [x] `handoff install --tool claude-code|cursor` — print integration recipe
-- [x] Zero runtime deps beyond `commander`; Node 20+; Windows-first
+- [x] Zero runtime deps beyond `commander`; Node 22.5+; Windows-first
 
 ---
 
@@ -32,7 +32,7 @@ Read past sessions from every major coding tool and fold them back into
 - [x] `handoff doctor` — scan project + global install for common issues
 - [x] `handoff uninstall --tool <tool>` — print removal instructions
 - [x] Claude Code hooks (SessionStart / Stop / StopFailure with `rate_limit`) auto-inject the primer
-- [x] Test suite: 74 tests across all 4 adapters, render parity, schema migration, compact primer, cross-platform, bug-injection validated
+- [x] Test suite: 113 tests across all 4 adapters, render parity, schema migration, compact primer, cross-platform, bug-injection validated
 - [x] README.md (production, GitHub-ready)
 - [x] `handoff ingest --from codex` — parse `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`
 - [x] `handoff ingest --from gemini` — parse `~/.gemini/tmp/<hash>/chats/*.json` (+ JSONL follow-up)
@@ -137,6 +137,42 @@ context across projects either."
 
 ---
 
+## v5 — hardening (shipped, 0.5.0)
+
+Cross-platform + cross-node validation before the adapter surface kept growing.
+
+- [x] Live macOS validation pass — install + version, `pbcopy` clipboard cascade, launcher PATH resolution, Cursor FS layout under `~/Library/Application Support/`, Claude Code encoder under Unix roots, Obsidian sync on Synology-mounted vault
+- [x] CI matrix — `ubuntu-latest × macos-latest × windows-latest` × Node 22 + 24 via `.github/workflows/ci.yml`
+- [x] Engines bump — `"node": ">=22.5"` in `package.json`; `node:sqlite` stabilised in 22.5 so we stopped shipping the "Node 20 works except for the Cursor adapter" caveat
+- [x] `scripts/run-tests.mjs` cross-version test runner — shells into every `test/*.test.mjs`, aggregates results, returns non-zero on any failure (so CI fails fast without each suite reimplementing the wrapper)
+- [x] `HANDOFF_SEARCH_ROOTS` Windows path-delimiter fix — `path.delimiter` (`;` on Windows, `:` on POSIX) instead of hard-coded `:`, in both `src/search.ts` and `src/patterns.ts`
+
+---
+
+## v6 — ingest persistence (shipped, 0.6.0)
+
+The Codex-dogfood fix. Imported transcripts used to evaporate the moment you ran `handoff prime` from a second agent; now they stick.
+
+- [x] `handoff ingest --from <tool>` persists the parsed summary to `.handoff/ingested-context.md` whenever the project has a `.handoff/` folder. Previous runs are superseded, not appended, so the file always reflects the most-recent ingest
+- [x] `handoff prime` surfaces `ingested-context.md` in both full and `--compact` modes, so the next agent sees the handed-over context without the human re-pasting
+- [x] Round-trip validated end-to-end via a Codex-autonomous session — Codex ingested a Claude Code transcript, ran `handoff prime` in its own session, and answered follow-up questions from the imported context with no human glue. This was the first "agent hands off to agent without a human in the loop" moment
+- [x] 37 → 113 tests (new coverage: ingest persistence, ingested-context surfacing in prime, compact-mode truncation of ingested content, cross-adapter persistence parity, supersede-not-append behaviour)
+
+---
+
+## Future (speculative)
+
+**Gate:** do not build any of the below until at least one of — npm downloads >100/week, 3+ GitHub issues from non-Zohar accounts, or an unsolicited community shoutout. Until then, the v0.1–v0.6 surface is the product; adding more is scope creep in search of a user.
+
+- **v7 — auto-rule promotion.** When the same correction theme appears 3+ times across a project's `.handoff/corrections.md`, offer to promote it into the tool-native rules file (`CLAUDE.md`, `.cursorrules`, `AGENTS.md`, `GEMINI.md`) so the next agent inherits it as a hard instruction instead of a soft primer hint
+- **v8 — adapter expansion.** Ingest for Aider, Continue.dev, Zed AI, Cline, Roo Code, Windsurf. Mechanical work; each adds ~200 LoC + tests. Only ship the adapters that match real users
+- **v9 — real-time agent coordination.** `handoff lease "feature-X"` so two concurrent agents on the same `.handoff/` don't both think they own the same open loop. Extends the `withFileLock` primitive from v3 into a longer-held scoped lease
+- **v10 — replay + diff.** `handoff replay --at <commit>` reconstructs the `.handoff/` state at an earlier git revision; `handoff diff` shows what an agent changed in a session. Useful for "what did Claude actually do last night" postmortems
+- **v11 — git hooks.** `pre-commit` warns when `.handoff/open-loops.md` has open items ("you're committing but 3 loops are still open — intentional?"); optional `post-commit` auto-save. Opt-in via `handoff install --hooks`, off by default
+- **Speculative v12+.** Editor statusbar extension (VSCode/Cursor/Zed) showing `.handoff/` state at a glance. Gated behind sustained usage
+
+---
+
 ## Explicitly not doing
 
 - Binary database format for `.handoff/`. It stays human-readable
@@ -148,3 +184,9 @@ context across projects either."
   normal git; that's the whole point.
 - An agent-side runtime dependency. `.handoff/` is plain files; any tool
   (including ones that don't exist yet) can read them.
+- Hosted coordination layer. If two agents need to coordinate across machines,
+  they can share a git-backed `.handoff/`; running a server to mediate that
+  reintroduces the cloud-sync dependency we explicitly rejected above.
+- AI-generated roadmap entries. This file is curated by hand so the scope
+  reflects real shipped work and real decisions, not an LLM's guess at what
+  should come next.

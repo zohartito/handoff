@@ -41,7 +41,7 @@ Update as state changes. Delete stale items.
 - Cross-platform audit: linux clipboard cascade (wl-copy → xclip → xsel), Cursor user dir per-OS, case-sensitivity fix; see `CROSS-PLATFORM.md`
 - `corrections.md` template seeded with "don't re-explain the project" rule
 - Doctor: detects hooks-configured-but-handoff-not-in-PATH
-- 37 → 74 tests (0 regressions)
+- 37 → 113 tests (0 regressions)
 
 ## In flight
 

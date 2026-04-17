@@ -33,7 +33,7 @@ State is saved, primer is on your clipboard, Cursor is launching. Paste the prim
 
 ## Installation
 
-Requires Node 20+. Node 22+ is recommended — the Cursor ingest adapter uses the built-in `node:sqlite` module, which is stable from 22. No other runtime dependencies beyond `commander`.
+Requires Node 22.5+ (the Cursor ingest adapter uses the built-in `node:sqlite` module, which stabilised in 22.5). No other runtime dependencies beyond `commander`.
 
 ```bash
 npm install -g @zohartito/handoff
