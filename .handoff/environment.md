@@ -25,41 +25,38 @@ Human notes:
 
 ## Auto
 
-_refreshed: 2026-04-17T04:15:14.101Z_
-- os: win32 10.0.26200 (x64)
-- user: zohar_4ta16fp
-- node: v24.14.0
-- cwd: `C:\Users\zohar_4ta16fp\handoff`
+_refreshed: 2026-04-17T04:34:48.987Z_
+- os: darwin 25.3.0 (arm64)
+- user: zohartito
+- node: v23.7.0
+- cwd: `/Users/zohartito/Documents/handoff`
 - git branch: `main`
 
 ### git status
 
 ```
-M .handoff/decisions.md
+M .handoff/attempts.md
  M .handoff/environment.md
  M .handoff/meta.json
- M .handoff/task.md
-?? .github/
 ```
 
 ### recent commits
 
 ```
+90c28c2 chore(v1.6): hand off mac/linux validation to MacBook via .handoff/task.md
 63cdfd8 feat(v4): permanent memory - obsidian sync, cross-project search + patterns (0.4.0)
 3ea546a feat(v2.5/v3): agent-initiated handoffs + concurrency safety (0.3.0)
 1f1f0f0 chore(v1.6): suppress 'Source tool: unknown', refresh own .handoff/, add v1.6 roadmap
 ca0a849 feat(v1.5): ingest --all, compact primer, schema migration, cross-platform
-67e0c2d fix(ingest): scope 'latest' session to requested project path
 ```
 
 ### diff stat
 
 ```
-.handoff/decisions.md   |  6 ++++
- .handoff/environment.md | 19 +++++--------
+.handoff/attempts.md    | 54 +++++++++++++++++++++++++++++++++++++++++++++++++
+ .handoff/environment.md | 25 +++++++++--------------
  .handoff/meta.json      |  2 +-
- .handoff/task.md        | 73 ++++++++++++++++++++++++++++++++++++++++---------
- 4 files changed, 74 insertions(+), 26 deletions(-)
+ 3 files changed, 64 insertions(+), 17 deletions(-)
 ```
 
 ## Human notes

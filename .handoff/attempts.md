@@ -83,3 +83,57 @@ most bubbles returned empty/missing workspaceUris; filtering by project yielded 
 
 **summary:** bubble.workspaceUris is unreliable; authoritative linkage is workspace-scoped ItemTable
 ---
+
+## 2026-04-17T04:25:43.861Z
+**tried:** validated pbcopy clipboard branch on macOS
+
+**fix:** handoff switch codex --no-launch populated pasteboard; pbpaste returned primer
+---
+
+## 2026-04-17T04:26:04.132Z
+**tried:** validated install + version on macOS 0.4.0
+
+**fix:** handoff --version printed 0.4.0; node 'find package.json' path resolver works under /usr/local/lib on mac
+---
+
+## 2026-04-17T04:26:04.174Z
+**tried:** validated pbcopy clipboard branch on macOS
+
+**fix:** handoff switch codex --no-launch populated pasteboard; pbpaste returned primer
+---
+
+## 2026-04-17T04:34:48.731Z
+**tried:** install + version on macOS
+
+**fix:** npm i -g @zohartito/handoff@0.4.0 → handoff --version prints 0.4.0
+---
+
+## 2026-04-17T04:34:48.774Z
+**tried:** pbcopy clipboard cascade on macOS
+
+**fix:** handoff switch codex --no-launch copies primer silently; pbpaste shows # HANDOFF PRIMER
+---
+
+## 2026-04-17T04:34:48.813Z
+**tried:** launcher PATH resolution on macOS
+
+**fix:** which codex/cursor/code all resolve: /opt/homebrew/bin/codex, /usr/local/bin/cursor, /usr/local/bin/code
+---
+
+## 2026-04-17T04:34:48.852Z
+**tried:** Cursor FS layout on macOS
+
+**fix:** ingest --from cursor --list scans ~/Library/Application Support/Cursor/User/workspaceStorage (correct Unix path, cursorUserDir branch fires)
+---
+
+## 2026-04-17T04:34:48.891Z
+**tried:** Claude Code project-path encoding under Unix roots
+
+**fix:** ingest --from claude-code --list returns sessions from /Users/zohartito/.claude/projects/-Users-zohartito/ — encodeProjectPath handles / and leading-slash
+---
+
+## 2026-04-17T04:34:48.929Z
+**tried:** Obsidian sync on Synology-mounted vault (macOS)
+
+**fix:** handoff obsidian sync --vault ~/SynologyDrive/Obsidian/OpenClaw-Brain → 1 daily, 7 decisions, 2 rules; Daily/2026-04-16.md created
+---
