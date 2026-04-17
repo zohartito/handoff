@@ -1,5 +1,6 @@
 import { resolveHandoffPaths } from "../format/paths.js";
 import { appendLine, exists } from "../util/fs.js";
+import { withFileLock } from "../util/lock.js";
 
 type CorrectOpts = {
   action: string;
@@ -32,6 +33,6 @@ export async function correct(opts: CorrectOpts): Promise<void> {
     .filter(Boolean)
     .join("\n");
 
-  await appendLine(paths.corrections, "\n" + entry);
+  await withFileLock(paths.corrections, () => appendLine(paths.corrections, "\n" + entry));
   console.log(`logged correction at ${ts}`);
 }

@@ -1,5 +1,6 @@
 import { resolveHandoffPaths } from "../format/paths.js";
 import { appendLine, exists } from "../util/fs.js";
+import { withFileLock } from "../util/lock.js";
 
 type AttemptOpts = {
   what: string;
@@ -34,6 +35,6 @@ export async function attempt(opts: AttemptOpts): Promise<void> {
     .filter(Boolean)
     .join("\n");
 
-  await appendLine(paths.attempts, "\n" + entry);
+  await withFileLock(paths.attempts, () => appendLine(paths.attempts, "\n" + entry));
   console.log(`logged attempt at ${ts}`);
 }

@@ -1,0 +1,17 @@
+[Desktop Entry]
+# handoff-switch.desktop — XDG launcher for `handoff switch <tool>`.
+#
+# Install: copy this file to ~/.local/share/applications/ and the companion
+# wrapper handoff-switch.sh somewhere on PATH (e.g. ~/.local/bin/).
+# Then bind a keyboard shortcut in your DE's settings that runs:
+#   handoff-switch.sh
+# The wrapper prompts for the target tool (zenity / kdialog) and runs
+# `handoff switch <tool>` in the current working directory.
+Type=Application
+Name=handoff switch
+Comment=Hand off current session to another AI coding tool
+Exec=handoff-switch.sh %f
+Icon=utilities-terminal
+Terminal=true
+Categories=Development;Utility;
+Keywords=handoff;ai;claude;cursor;codex;gemini;

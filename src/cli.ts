@@ -91,11 +91,13 @@ program
   .option("--tool <tool>", "target tool (claude-code, cursor, codex, gemini, generic)", "generic")
   .option("--max-chars <n>", "truncate to fit", (v) => parseInt(v, 10))
   .option("--compact", "emit a task-focused primer (< 2k chars) instead of the full artifact")
+  .option("--subagent", "emit a subagent primer (for Claude Code task-subagents; ~1.5k chars, no writes)")
   .action(async (opts) => {
     await prime({
       tool: opts.tool,
       maxChars: opts.maxChars,
       compact: opts.compact,
+      subagent: opts.subagent,
     });
   });
 

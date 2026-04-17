@@ -238,6 +238,10 @@ Log significant events with `handoff attempt`, `handoff decide`, and
 
 Codex and Gemini follow the same pattern: `handoff switch codex`, `handoff switch gemini`. Native integrations will land as those tools expose suitable extension points.
 
+## Keyboard shortcuts and tray integration
+
+Optional launchers live in `scripts/` (AutoHotkey v2 for Windows, AppleScript for macOS, XDG `.desktop` + shell wrapper for Linux) so you can trigger `handoff switch` from a global hotkey without opening a terminal first — see `scripts/README.md` for install and keybinding steps.
+
 ## Architecture
 
 - **Local-first, file-based.** No cloud, no DB, no servers. The source of truth is `.handoff/` in your project root.

@@ -92,6 +92,17 @@ Keep entries small and specific. Don't log trivial things. Log anything a
 future agent (or you, next session) would benefit from knowing.
 ${"```"}
 
+## 3. (Optional) Add the \`/handoff-switch\` slash command
+
+The repo ships a template at \`templates/claude-commands/handoff-switch.md\`.
+Copy it to either location so Claude Code picks it up:
+
+- Per-project: \`.claude/commands/handoff-switch.md\`
+- User-global: \`~/.claude/commands/handoff-switch.md\`
+
+Then \`/handoff-switch <tool>\` inside any Claude Code session runs
+\`handoff switch <tool>\` via the Bash tool without leaving the session.
+
 ## Verify
 
 ${"```"}bash
@@ -136,5 +147,12 @@ handoff prime --tool cursor | xclip -selection clipboard   # Linux (X11)
 ${"```"}
 
 Then paste into a Cursor chat as your first message.
+
+## 3. (Optional) Teach the agent to recognize a "switch to <tool>" trigger
+
+The repo ships a template at \`templates/cursor/slash-handoff-switch.md\`.
+Copy the instruction block from that file into your \`.cursorrules\` so the
+Cursor agent treats "switch to <tool>" (or \`/handoff-switch <tool>\`) as a
+request to run \`handoff switch <tool>\` via its terminal tool.
 `);
 }

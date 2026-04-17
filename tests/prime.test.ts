@@ -6,6 +6,7 @@ import { join } from "node:path";
 import {
   buildPrimer,
   buildCompactPrimer,
+  buildSubagentPrimer,
   lastNEntries,
   splitEntries,
   COMPACT_THRESHOLD,
@@ -248,4 +249,86 @@ test("buildPrimer (full) still emits all sections on the realistic fixture", asy
   // And all 5 corrections/attempts survive
   assert.match(out, /wrote a README unprompted/);
   assert.match(out, /pegged the SQLite version to 3\.41/);
+});
+
+// -- rate-limit protocol section -------------------------------------------
+
+test("buildPrimer (full) includes rate-limit protocol section just after the preamble", async () => {
+  const paths = scaffoldRealisticHandoff();
+  const out = await buildPrimer(paths, "claude-code", Infinity);
+  assert.match(out, /## Rate-limit protocol/);
+  // Positioning: rate-limit section must land before the Task section.
+  const rateIdx = out.indexOf("## Rate-limit protocol");
+  const taskIdx = out.indexOf("## Task");
+  assert.ok(rateIdx > 0 && taskIdx > rateIdx, "rate-limit section must come before ## Task");
+  // Tells the agent the signals to watch for and the commands to run.
+  assert.match(out, /rate limit/);
+  assert.match(out, /429/);
+  assert.match(out, /handoff correct "hit rate limit on claude-code"/);
+  assert.match(out, /handoff switch codex/);
+});
+
+test("buildPrimer rate-limit recommends claude-code as fallback when current tool is codex", async () => {
+  const paths = scaffoldRealisticHandoff();
+  const out = await buildPrimer(paths, "codex", Infinity);
+  assert.match(out, /handoff switch claude-code/);
+  assert.match(out, /handoff correct "hit rate limit on codex"/);
+});
+
+test("buildCompactPrimer includes a shorter rate-limit section before Task", async () => {
+  const paths = scaffoldRealisticHandoff();
+  const out = await buildCompactPrimer(paths, "claude-code");
+  assert.match(out, /## Rate-limit protocol/);
+  const rateIdx = out.indexOf("## Rate-limit protocol");
+  const taskIdx = out.indexOf("## Task");
+  assert.ok(rateIdx > 0 && taskIdx > rateIdx, "rate-limit section must come before ## Task in compact");
+  assert.match(out, /handoff switch codex/);
+  // Tool-specific compact primer with claude-code framing is slightly
+  // heavier than the generic one (asserted < 2000 elsewhere), but should
+  // still stay well inside the compact envelope.
+  assert.ok(out.length < 2100, `compact primer with rate-limit block too long: ${out.length}`);
+});
+
+// -- subagent primer variant ----------------------------------------------
+
+test("buildSubagentPrimer contains parent/subagent framing and write-lock warning", async () => {
+  const paths = scaffoldRealisticHandoff();
+  const out = await buildSubagentPrimer(paths, "claude-code");
+  assert.match(out, /spawned from a parent session/);
+  assert.match(out, /Do NOT modify/);
+});
+
+test("buildSubagentPrimer output is under 2000 chars on a realistic fixture", async () => {
+  const paths = scaffoldRealisticHandoff();
+  const out = await buildSubagentPrimer(paths, "claude-code");
+  assert.ok(
+    out.length < 2000,
+    `subagent primer too long: ${out.length} chars >= 2000\n---\n${out}`,
+  );
+});
+
+test("buildSubagentPrimer includes the task + latest correction + latest attempt", async () => {
+  const paths = scaffoldRealisticHandoff();
+  const out = await buildSubagentPrimer(paths, "claude-code");
+  // Task section and the parent's goal.
+  assert.match(out, /## Task/);
+  assert.match(out, /portable session-state CLI/);
+  // Latest (5th) correction present.
+  assert.match(out, /## Latest corrections/);
+  assert.match(out, /over-commented obvious code/);
+  // Latest (5th) attempt present.
+  assert.match(out, /## Latest failed attempts/);
+  assert.match(out, /parsed attempts\.md with a naive split/);
+});
+
+test("buildSubagentPrimer drops environment / decisions / codebase-map / references / identity", async () => {
+  const paths = scaffoldRealisticHandoff();
+  const out = await buildSubagentPrimer(paths, "claude-code");
+  assert.doesNotMatch(out, /## Environment/);
+  assert.doesNotMatch(out, /## Decisions/);
+  assert.doesNotMatch(out, /## Codebase map/);
+  assert.doesNotMatch(out, /## References/);
+  assert.doesNotMatch(out, /## Identity/);
+  // And no rate-limit section either — handoffs are the parent's decision.
+  assert.doesNotMatch(out, /## Rate-limit protocol/);
 });

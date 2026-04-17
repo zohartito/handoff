@@ -2,6 +2,7 @@ import { platform, release, arch, userInfo } from "node:os";
 import { resolveHandoffPaths } from "../format/paths.js";
 import { collectGitState } from "../util/git.js";
 import { exists, writeJson, writeFileSafe, readOrEmpty } from "../util/fs.js";
+import { withFileLock } from "../util/lock.js";
 import { loadMeta } from "../format/migrate.js";
 
 const AUTO_HEADER = "## Auto";
@@ -42,9 +43,11 @@ export async function save(opts: { cwd?: string } = {}): Promise<void> {
     .filter(Boolean)
     .join("\n");
 
-  const existing = await readOrEmpty(paths.environment);
-  const rebuilt = replaceAutoSection(existing, envAuto);
-  await writeFileSafe(paths.environment, rebuilt);
+  await withFileLock(paths.environment, async () => {
+    const existing = await readOrEmpty(paths.environment);
+    const rebuilt = replaceAutoSection(existing, envAuto);
+    await writeFileSafe(paths.environment, rebuilt);
+  });
 
   console.log(`saved at ${new Date().toISOString()}`);
   if (git) console.log(`git: ${git.branch ?? "(detached)"}, ${countLines(git.status)} changes`);

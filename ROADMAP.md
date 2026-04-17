@@ -62,8 +62,8 @@ Tiny follow-ups caught during v1.5 ship. None block v3; all low-effort.
 
 - [x] Suppress `Source tool: unknown` in primers when `sourceTool` is unset (init without `--from`)
 - [ ] Live mac + linux validation pass — code audit is done (see `CROSS-PLATFORM.md`), but "Requires live testing" items need a real mac/linux box. Specifically: clipboard cascade (wl-copy/xclip/xsel), launcher PATH resolution on snap/flatpak, Cursor FS layout on non-Windows, Claude Code project-path encoding under Unix roots.
-- [ ] System-tray / keyboard-shortcut variant of `handoff switch` (deferred from v2.5; CLI covers 90% of use)
-- [ ] Document the "blocked upstream" pre-rate-limit API gap as an explicit roadmap line, not just a README note
+- [x] System-tray / keyboard-shortcut variant of `handoff switch` — covered by the optional launchers in `scripts/` (AutoHotkey / AppleScript / XDG `.desktop` + shell wrapper). See `scripts/README.md`.
+- [x] Document the "blocked upstream" pre-rate-limit API gap as an explicit roadmap line — see note on v3 item 1 below.
 
 ---
 
@@ -80,29 +80,38 @@ falls short.
 
 ---
 
-## v2.5 — one-button handoff (shipped early)
+## v2.5 — one-button handoff (shipped, 0.3.0)
 
 Originally slated after v2. Pulled forward because the ingest work made it
 trivial.
 
 - [x] `handoff switch <tool>` does save + prime + clipboard + launch
-- [ ] System-tray app / keyboard shortcut → same behavior without a terminal
-  *(deferred; CLI + `handoff switch` covers the 90% case today)*
+- [x] System-tray app / keyboard shortcut → same behavior without a terminal.
+  Shipped as optional launchers in `scripts/` (AutoHotkey v2 on Windows,
+  AppleScript on macOS, XDG `.desktop` + `handoff-switch.sh` on Linux).
 
 ---
 
-## v3 — agent-initiated handoffs (planned)
+## v3 — agent-initiated handoffs (shipped, 0.3.0)
 
 The real unlock: the agent itself decides it's time to hand off, not the user.
 
-- [ ] Primer detects "I'm about to hit rate limits" / "I should switch tools" signals
-- [ ] Slash command inside an agent session that triggers `handoff switch`
-  without leaving the session
-- [ ] Claude Code "subagent" primer variant so a spawned task agent inherits
+- [x] Primer detects "I'm about to hit rate limits" / "I should switch tools" signals.
+  **Upstream gap (blocked):** Claude Code only fires `StopFailure` *after* the
+  rate limit is hit; no pre-rate-limit event exists in the hook surface today.
+  Until upstream exposes one, the primer's rate-limit protocol is agent-driven
+  (the agent self-reports when it thinks it's close), not event-driven.
+- [x] Slash command inside an agent session that triggers `handoff switch`
+  without leaving the session — `templates/claude-commands/handoff-switch.md`
+  for Claude Code, `templates/cursor/slash-handoff-switch.md` for Cursor.
+  `handoff install` points users at the template paths.
+- [x] Claude Code "subagent" primer variant so a spawned task agent inherits
   `.handoff/` context
-- [ ] Multi-agent coordination: two tools working on the same `.handoff/`
-  concurrently without clobbering each other (file locking or JSONL append
-  semantics)
+- [x] Multi-agent coordination: two tools working on the same `.handoff/`
+  concurrently without clobbering each other — `withFileLock` in
+  `src/util/lock.ts` wraps the markdown append/RMW paths in
+  attempt/decide/correct/save; JSONL writers use pure `fs.appendFile`
+  (single-syscall atomic for small payloads).
 
 ---
 

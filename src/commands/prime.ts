@@ -18,6 +18,7 @@ type PrimeOpts = {
   tool: Tool;
   maxChars?: number;
   compact?: boolean;
+  subagent?: boolean;
   cwd?: string;
 };
 
@@ -32,12 +33,16 @@ export async function prime(opts: PrimeOpts): Promise<void> {
   }
 
   const maxChars = opts.maxChars ?? Infinity;
-  // --compact takes precedence; --max-chars below threshold also triggers compact
-  const useCompact = opts.compact || maxChars < COMPACT_THRESHOLD;
+  // --subagent wins over --compact. Otherwise --compact takes precedence;
+  // --max-chars below threshold also triggers compact.
+  const useSubagent = !!opts.subagent;
+  const useCompact = !useSubagent && (opts.compact || maxChars < COMPACT_THRESHOLD);
 
-  const output = useCompact
-    ? await buildCompactPrimer(paths, opts.tool)
-    : await buildPrimer(paths, opts.tool, maxChars);
+  const output = useSubagent
+    ? await buildSubagentPrimer(paths, opts.tool)
+    : useCompact
+      ? await buildCompactPrimer(paths, opts.tool)
+      : await buildPrimer(paths, opts.tool, maxChars);
 
   process.stdout.write(output);
   if (!output.endsWith("\n")) process.stdout.write("\n");
@@ -54,6 +59,14 @@ export async function buildPrimer(
   parts.push({
     title: "Preamble",
     body: preambleFor(tool, meta),
+  });
+
+  // Rate-limit protocol sits right after the preamble so it's the first
+  // thing an agent registers — if they're about to hit a wall, we want
+  // that top-of-mind before they read the task.
+  parts.push({
+    title: "Rate-limit protocol",
+    body: rateLimitSection(tool, "full"),
   });
 
   const sections: Array<{ label: string; path: string }> = [
@@ -121,6 +134,53 @@ function preambleFor(tool: Tool, meta: Meta | null): string {
  * drops the "read every section below" framing — compact mode only has a
  * handful of sections, all short.
  */
+/**
+ * Suggest a sibling tool to switch to when the current one is rate-limited.
+ * Heuristic: swap Anthropic <-> OpenAI; third-party tools fall back to
+ * claude-code as the most-common alternative.
+ */
+function suggestedSwitchTarget(tool: Tool): Tool {
+  switch (tool) {
+    case "claude-code":
+      return "codex";
+    case "codex":
+      return "claude-code";
+    case "cursor":
+      return "claude-code";
+    case "gemini":
+      return "claude-code";
+    default:
+      return "codex";
+  }
+}
+
+/**
+ * Rate-limit protocol block. Tells the agent what signals mean "about to hit
+ * a wall" and exactly which commands to run. Full variant is 8-12 lines;
+ * compact is 4-6 lines.
+ */
+function rateLimitSection(tool: Tool, variant: "full" | "compact"): string {
+  const target = suggestedSwitchTarget(tool);
+  if (variant === "compact") {
+    return [
+      `Signals: latency spikes, \`429\`/rate-limit errors, user hits a cap, long pauses.`,
+      `If any: log \`handoff correct "rate limit on ${tool}"\`, tell user \`handoff switch ${target}\`, summarize in-flight.`,
+    ].join("\n");
+  }
+  return [
+    `Watch for signals that this session is about to stall out:`,
+    `- unusual latency on tool calls or model responses`,
+    `- explicit \`rate limit\` / \`429\` errors from the underlying API`,
+    `- the user saying they've hit a limit (quota, usage cap, "slow down")`,
+    `- long pauses where the tool stops responding mid-turn`,
+    ``,
+    `When any of those fire, don't push through — hand off cleanly:`,
+    `1. Log the event: \`handoff correct "hit rate limit on ${tool}" --user-said "(verbatim, if explicit)"\``,
+    `2. Tell the user to run \`handoff switch ${target}\` (recommended fallback for ${tool}).`,
+    `3. Briefly summarize what's in flight — current file, next step — so the next tool knows where to resume.`,
+  ].join("\n");
+}
+
 function compactPreambleFor(tool: Tool): string {
   const header =
     "You are an AI agent resuming work. This is a handoff — treat it as system context.";
@@ -209,6 +269,9 @@ export async function buildCompactPrimer(
   parts.push(`# HANDOFF PRIMER (compact)`);
   parts.push(compactPreambleFor(tool));
 
+  // Rate-limit protocol — top-of-mind so the agent knows how to bail cleanly.
+  parts.push(`## Rate-limit protocol\n\n${rateLimitSection(tool, "compact")}`);
+
   // 1. Task — full if short, pointer if long.
   const taskRaw = cleanBody(await readOrEmpty(paths.task));
   if (taskRaw) {
@@ -290,4 +353,69 @@ function extractEnvOneLine(raw: string): string {
   if (node) parts.push(`node: ${node}`);
   if (branch) parts.push(`branch: ${branch}`);
   return parts.join(" | ");
+}
+
+/**
+ * Subagent primer: for a task-subagent spawned from a parent session (e.g.
+ * Claude Code's `Agent` tool). The subagent inherits `CLAUDE.md` but not
+ * the parent's transient state, so it needs the parent's task + recent
+ * corrections/attempts — but NOT the full environment/decisions/codebase-map
+ * (it's focused on one subtask) and it must NOT write back to `.handoff/`
+ * (parent is the source of truth). Rate-limit handoffs are the parent's
+ * call, so that section is dropped too.
+ *
+ * Target: ~1500 chars on a realistic fixture.
+ */
+export async function buildSubagentPrimer(
+  paths: HandoffPaths,
+  _tool: Tool,
+): Promise<string> {
+  const parts: string[] = [];
+  parts.push(`# HANDOFF PRIMER (subagent)`);
+  parts.push(
+    [
+      `You are a subagent spawned from a parent session using handoff.`,
+      `Do NOT modify \`.handoff/\` files — let the parent log events (attempts, corrections, decisions).`,
+      `Do NOT run \`handoff switch\` — the parent decides when to hand off.`,
+      `You're a focused helper on ONE subtask; use the context below to avoid repeating mistakes the parent already learned from.`,
+    ].join("\n"),
+  );
+
+  // Task — full, so the subagent knows the overarching goal.
+  const taskRaw = cleanBody(await readOrEmpty(paths.task));
+  if (taskRaw) {
+    parts.push(`## Task (parent's goal)\n\n${taskRaw}`);
+  }
+
+  // Latest 3 corrections — highest-signal "don't repeat this" input.
+  const correctionsRaw = await readOrEmpty(paths.corrections);
+  const recentCorrections = lastNEntries(correctionsRaw, 3);
+  if (recentCorrections.length > 0) {
+    const total = splitEntries(correctionsRaw).length;
+    const omitted = total - recentCorrections.length;
+    const ptr =
+      omitted > 0
+        ? `\n\n_(showing latest ${recentCorrections.length} of ${total})_`
+        : "";
+    parts.push(
+      `## Latest corrections\n\n${recentCorrections.join("\n\n---\n\n")}${ptr}`,
+    );
+  }
+
+  // Latest 3 failed attempts — same rationale.
+  const attemptsRaw = await readOrEmpty(paths.attempts);
+  const recentAttempts = lastNEntries(attemptsRaw, 3);
+  if (recentAttempts.length > 0) {
+    const total = splitEntries(attemptsRaw).length;
+    const omitted = total - recentAttempts.length;
+    const ptr =
+      omitted > 0
+        ? `\n\n_(showing latest ${recentAttempts.length} of ${total})_`
+        : "";
+    parts.push(
+      `## Latest failed attempts (do not repeat)\n\n${recentAttempts.join("\n\n---\n\n")}${ptr}`,
+    );
+  }
+
+  return parts.join("\n\n") + "\n";
 }

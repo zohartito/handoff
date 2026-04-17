@@ -1,5 +1,6 @@
 import { resolveHandoffPaths } from "../format/paths.js";
 import { appendLine, exists } from "../util/fs.js";
+import { withFileLock } from "../util/lock.js";
 
 type DecideOpts = {
   choice: string;
@@ -34,6 +35,6 @@ export async function decide(opts: DecideOpts): Promise<void> {
     .filter(Boolean)
     .join("\n");
 
-  await appendLine(paths.decisions, "\n" + entry);
+  await withFileLock(paths.decisions, () => appendLine(paths.decisions, "\n" + entry));
   console.log(`logged decision at ${ts}`);
 }
