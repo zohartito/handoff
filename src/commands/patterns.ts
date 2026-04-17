@@ -1,6 +1,6 @@
 import { promises as fs } from "node:fs";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { delimiter as pathDelimiter, join, resolve } from "node:path";
 
 export interface PatternsOpts {
   /** Override default search roots. When set, HANDOFF_SEARCH_ROOTS env is ignored. */
@@ -119,7 +119,7 @@ function resolveRoots(override?: string[]): string[] {
   const env = process.env.HANDOFF_SEARCH_ROOTS;
   if (env && env.trim()) {
     return env
-      .split(/[;:,]/)
+      .split(pathDelimiter)
       .map((s) => s.trim())
       .filter(Boolean)
       .map((r) => resolve(r));
