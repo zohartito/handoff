@@ -6,8 +6,9 @@ import { exists, readOrEmpty, writeFileSafe } from "../util/fs.js";
 import { ingestCursor, buildCursorSummary } from "../adapters/cursor.js";
 import { ingestCodex, buildCodexSummary } from "../adapters/codex.js";
 import { ingestGemini, buildGeminiSummary } from "../adapters/gemini.js";
+import { ingestPaste, buildPasteSummary } from "../adapters/paste.js";
 
-export type IngestFrom = "claude-code" | "cursor" | "codex" | "gemini";
+export type IngestFrom = "claude-code" | "cursor" | "codex" | "gemini" | "paste";
 
 export type IngestOpts = {
   from?: IngestFrom;
@@ -17,6 +18,10 @@ export type IngestOpts = {
   out?: string;
   project?: string; // project path to scope session discovery
   cwd?: string;
+  // --from paste only
+  file?: string;
+  stdin?: boolean;
+  clipboard?: boolean;
 };
 
 type AnyEvent = Record<string, any>;
@@ -79,9 +84,19 @@ export async function ingest(opts: IngestOpts): Promise<void> {
     });
     return;
   }
+  if (from === "paste") {
+    await ingestPaste({
+      file: opts.file,
+      stdin: opts.stdin,
+      clipboard: opts.clipboard,
+      out: opts.out,
+      project,
+    });
+    return;
+  }
 
   console.error(
-    `ingest --from ${from} not supported yet. known sources: claude-code, cursor, codex, gemini.`,
+    `ingest --from ${from} not supported yet. known sources: claude-code, cursor, codex, gemini, paste.`,
   );
   process.exitCode = 1;
 }
@@ -150,6 +165,7 @@ export function defaultIngestAllSources(project: string): IngestAllSource[] {
     { label: "Cursor", build: () => buildCursorSummary({ project }) },
     { label: "Codex", build: () => buildCodexSummary({ project }) },
     { label: "Gemini", build: () => buildGeminiSummary({ project }) },
+    { label: "Pasted transcript", build: () => buildPasteSummary({ project }) },
   ];
 }
 
