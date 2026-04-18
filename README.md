@@ -98,17 +98,17 @@ handoff correct "was about to add a new ORM layer" \
 
 ### `handoff prime [--tool <tool>] [--max-chars <n>]`
 
-Emits a tool-specific primer prompt to stdout. Pipe it, redirect it, or read it. `--tool` accepts `claude-code`, `cursor`, `codex`, `gemini`, or `generic`. `--max-chars` caps the output length for tools with tight context budgets.
+Emits a tool-specific primer prompt to stdout. Pipe it, redirect it, or read it. `--tool` accepts `claude-code`, `claude-desktop`, `cursor`, `codex`, `gemini`, or `generic`. `--max-chars` caps the output length for tools with tight context budgets.
 
-### `handoff install --tool <claude-code|cursor>`
+### `handoff install --tool <claude-code|claude-desktop|cursor>`
 
-Prints the exact integration instructions for the named tool — the `.claude/settings.json` snippet for Claude Code, or the `.cursorrules` additions for Cursor. Copy into place manually; `handoff` does not edit your tool configs.
+Prints the exact integration instructions for the named tool — the `.claude/settings.json` snippet for Claude Code, the Claude Desktop Project setup recipe (filesystem MCP + attached `.handoff/` files), or the `.cursorrules` additions for Cursor. Copy into place manually; `handoff` does not edit your tool configs.
 
 ### `handoff hook <session-start|stop|rate-limit>`
 
 Internal. Called by the Claude Code hook system. Do not invoke directly unless you're debugging the hook wiring.
 
-### `handoff ingest --from <claude-code|cursor|codex|gemini> [--session <id>] [--list] [--out <path>] [--project <path>]`
+### `handoff ingest --from <claude-code|cursor|codex|gemini|paste> [--session <id>] [--list] [--out <path>] [--project <path>]`
 
 Reads past AI agent sessions and produces a structured markdown summary. Useful when you want to seed `.handoff/` from work you've already done in another tool.
 
@@ -116,10 +116,27 @@ Reads past AI agent sessions and produces a structured markdown summary. Useful 
 - `--from cursor` reads Cursor's `state.vscdb` SQLite file (via built-in `node:sqlite`).
 - `--from codex` reads Codex rollout JSONL files from `~/.codex/sessions/...`.
 - `--from gemini` reads Gemini saved chats / checkpoints from `~/.gemini/tmp/...`.
+- `--from paste` reads a transcript you've already copied out of a tool that has no on-disk logs (Claude Desktop, ChatGPT web, etc.). Exactly one of `--file <path>`, `--stdin`, or `--clipboard` must be supplied. The raw paste lands in `.handoff/transcript.md`; the rendered summary goes to `.handoff/ingested-context.md`.
 - `--list` enumerates available sessions instead of ingesting.
 - `--session <id>` picks a specific session; omit to use the most recent.
 - `--out <path>` writes the summary to a file; omit for stdout.
 - `--project <path>` scopes the search to a specific project root.
+
+### `handoff capture [--from stdin|file] [--file <path>] [--mode full|summary] [--task <file>] [--decisions <file>] [--corrections <file>]`
+
+AI-runnable end-of-session dump. An outgoing agent feeds its own transcript through `capture` right before the session closes, so the next agent sees the full history plus extracted markers.
+
+- Appends the transcript to `.handoff/transcript.md` with a `## Session <ISO-date>` separator (safe to run twice).
+- `--mode full` (default) additionally scans the transcript for `DECISION:` / `TODO:` / `CORRECTION:` / `TASK:` marker lines and appends each to the matching `.handoff/*.md` file. The AI structures its own output with markers; `capture` routes them.
+- `--mode summary` only writes the transcript, skips extraction.
+- `--task` / `--decisions` / `--corrections` override the default targets (useful in tests or for writing to alternate files).
+
+```bash
+# AI pipes its own final message through capture
+echo "Session summary...
+DECISION: switch to NURBS perforation via AddInnerProfile
+CORRECTION: user said perforations go on folds too" | handoff capture --from stdin --mode full
+```
 
 If the current project already has a `.handoff/` folder and you omit `--out`,
 the summary is also persisted to `.handoff/ingested-context.md`. Future
@@ -135,7 +152,7 @@ One-shot handoff. Saves current state, builds a tool-specific primer, copies it 
 - `--no-save` skips the env refresh.
 - `--no-launch` copies the primer to the clipboard but does not spawn the tool. Useful if the target tool is already open.
 
-Supported targets: `claude-code`, `cursor`, `codex`, `gemini`, `generic`.
+Supported targets: `claude-code`, `claude-desktop`, `cursor`, `codex`, `gemini`, `generic`. For `claude-desktop` the launch step is always skipped (GUI app, no reliable CLI shim) — primer is copied, you open Claude Desktop and paste into the relevant Project yourself.
 
 ### `handoff obsidian sync [--vault <path>] [--project <path>]`
 

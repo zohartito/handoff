@@ -160,16 +160,31 @@ The Codex-dogfood fix. Imported transcripts used to evaporate the moment you ran
 
 ---
 
+## v7 — Claude Desktop + paste ingest (shipped, 0.7.0)
+
+Dogfooded into existence: a Claude Desktop conversation with no on-disk transcript has no ingest path, so the handoff ritual falls apart at the Desktop boundary. v7 makes Desktop a first-class target.
+
+- [x] `handoff ingest --from paste` — new adapter accepting a pasted transcript via `--file <path>`, `--stdin`, or `--clipboard`. Writes the raw paste to `.handoff/transcript.md` and produces a `renderMarkdown`-shaped summary via the standard `emitOutput` path, so pasted transcripts land in `.handoff/ingested-context.md` with the same shape as every other adapter. `--all` composes it alongside the other sources.
+- [x] `handoff capture` — AI-runnable end-of-session dump. Reads a transcript from stdin or file, appends to `.handoff/transcript.md` with timestamped session separators, and (in `--mode full`) heuristic-extracts `DECISION:` / `TODO:` / `CORRECTION:` / `TASK:` marker lines into the matching log files. Append-safe across multiple runs; `--mode summary` skips extraction.
+- [x] `handoff prime --tool claude-desktop` — Desktop-flavoured primer. References filesystem MCP (not shell), tells Desktop-Claude to read every `.handoff/` file on session start and dump `.handoff/transcript.md` + update the logs at session end. Respects `--compact` and `--subagent` variants. Rate-limit section suggests switching to claude-code as the same-account fallback.
+- [x] `handoff install --tool claude-desktop` / `uninstall --tool claude-desktop` — manual setup recipe for the Desktop Projects feature + filesystem/Obsidian MCP paths. No hook system on Desktop, so the integration is paste-primer-into-Project-instructions.
+- [x] `handoff switch claude-desktop` — force-`noLaunch` mode (GUI app, no reliable CLI shim). Copies primer + prints "open Claude Desktop manually and paste" hint.
+- [x] `handoff doctor` — stale-shim detection (the `@handoff/cli` ghost install we kept hitting) plus empty-jsonl warnings.
+- [x] `handoff init` — stop creating empty 1-byte `transcript.jsonl` / `tool-history.jsonl` files. They're created on first write by `capture` or `ingest` instead.
+- [x] 113 → 159 tests (+46 new): paste adapter, capture command, desktop primer, install/switch/uninstall for desktop, doctor shim detection, init cleanup.
+
+---
+
 ## Future (speculative)
 
-**Gate:** do not build any of the below until at least one of — npm downloads >100/week, 3+ GitHub issues from non-Zohar accounts, or an unsolicited community shoutout. Until then, the v0.1–v0.6 surface is the product; adding more is scope creep in search of a user.
+**Gate:** do not build any of the below until at least one of — npm downloads >100/week, 3+ GitHub issues from non-Zohar accounts, or an unsolicited community shoutout. Until then, the v0.1–v0.7 surface is the product; adding more is scope creep in search of a user.
 
-- **v7 — auto-rule promotion.** When the same correction theme appears 3+ times across a project's `.handoff/corrections.md`, offer to promote it into the tool-native rules file (`CLAUDE.md`, `.cursorrules`, `AGENTS.md`, `GEMINI.md`) so the next agent inherits it as a hard instruction instead of a soft primer hint
-- **v8 — adapter expansion.** Ingest for Aider, Continue.dev, Zed AI, Cline, Roo Code, Windsurf. Mechanical work; each adds ~200 LoC + tests. Only ship the adapters that match real users
-- **v9 — real-time agent coordination.** `handoff lease "feature-X"` so two concurrent agents on the same `.handoff/` don't both think they own the same open loop. Extends the `withFileLock` primitive from v3 into a longer-held scoped lease
-- **v10 — replay + diff.** `handoff replay --at <commit>` reconstructs the `.handoff/` state at an earlier git revision; `handoff diff` shows what an agent changed in a session. Useful for "what did Claude actually do last night" postmortems
-- **v11 — git hooks.** `pre-commit` warns when `.handoff/open-loops.md` has open items ("you're committing but 3 loops are still open — intentional?"); optional `post-commit` auto-save. Opt-in via `handoff install --hooks`, off by default
-- **Speculative v12+.** Editor statusbar extension (VSCode/Cursor/Zed) showing `.handoff/` state at a glance. Gated behind sustained usage
+- **v8 — auto-rule promotion.** When the same correction theme appears 3+ times across a project's `.handoff/corrections.md`, offer to promote it into the tool-native rules file (`CLAUDE.md`, `.cursorrules`, `AGENTS.md`, `GEMINI.md`) so the next agent inherits it as a hard instruction instead of a soft primer hint
+- **v9 — adapter expansion.** Ingest for Aider, Continue.dev, Zed AI, Cline, Roo Code, Windsurf. Mechanical work; each adds ~200 LoC + tests. Only ship the adapters that match real users
+- **v10 — real-time agent coordination.** `handoff lease "feature-X"` so two concurrent agents on the same `.handoff/` don't both think they own the same open loop. Extends the `withFileLock` primitive from v3 into a longer-held scoped lease
+- **v11 — replay + diff.** `handoff replay --at <commit>` reconstructs the `.handoff/` state at an earlier git revision; `handoff diff` shows what an agent changed in a session. Useful for "what did Claude actually do last night" postmortems
+- **v12 — git hooks.** `pre-commit` warns when `.handoff/open-loops.md` has open items ("you're committing but 3 loops are still open — intentional?"); optional `post-commit` auto-save. Opt-in via `handoff install --hooks`, off by default
+- **Speculative v13+.** Editor statusbar extension (VSCode/Cursor/Zed) showing `.handoff/` state at a glance. Gated behind sustained usage
 
 ---
 
