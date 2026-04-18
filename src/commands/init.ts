@@ -5,7 +5,6 @@ import {
   ensureDir,
   writeFileSafe,
   writeJson,
-  appendLine,
 } from "../util/fs.js";
 
 type InitOpts = { from?: string; force?: boolean; cwd?: string };
@@ -30,8 +29,11 @@ export async function init(opts: InitOpts = {}): Promise<void> {
 
   await writeJson(paths.meta, initialMeta(opts.from ?? "unknown", cwd));
   await writeJson(paths.filesManifest, initialFilesManifest());
-  await appendLine(paths.toolHistory, "");
-  await appendLine(paths.transcript, "");
+  // Note: we intentionally do NOT pre-create transcript.jsonl or
+  // tool-history.jsonl here. They are append-only logs that `handoff capture`
+  // and `handoff ingest` create on first write. Pre-creating them as empty
+  // 1-byte files was misleading — follow-up agents opened them expecting
+  // history and found nothing, wasting a tool call.
 
   console.log(`initialized .handoff/ at ${paths.dir}`);
   console.log("source tool:", opts.from ?? "unknown");
