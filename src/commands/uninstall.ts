@@ -1,10 +1,12 @@
-type Tool = "claude-code" | "cursor";
+type Tool = "claude-code" | "claude-desktop" | "cursor";
 
 type UninstallOpts = { tool: Tool };
 
 export async function uninstall(opts: UninstallOpts): Promise<void> {
   if (opts.tool === "claude-code") {
     printClaudeCode();
+  } else if (opts.tool === "claude-desktop") {
+    printClaudeDesktop();
   } else if (opts.tool === "cursor") {
     printCursor();
   } else {
@@ -92,6 +94,48 @@ ${"```"}
 
 The "claude code hooks" section should report no handoff hooks.
 Open a new Claude Code session — the primer should no longer auto-load.
+`);
+}
+
+function printClaudeDesktop(): void {
+  console.log(`# Remove Claude Desktop integration
+
+This command only prints instructions — it does not modify any files.
+
+Claude Desktop integration is all manual config inside the app, so
+cleanup is too.
+
+## 1. Remove the handoff block from your Project's custom instructions
+
+In Claude Desktop, open the Project for this codebase, then **Edit
+custom instructions** and delete the "This project uses \`handoff\`..."
+block you added during install.
+
+## 2. Detach \`.handoff/\` files from the Project (if you uploaded them)
+
+If you uploaded \`.handoff/*.md\` files as Project attachments, remove
+them from the Project now. If you rely on filesystem MCP instead,
+there's nothing to detach — just stop pasting the primer.
+
+## 3. (Optional) Remove the Project entirely
+
+If you made the Project only for handoff integration, you can delete it
+from the Claude Desktop Projects list. Conversations inside the Project
+will still exist, they just won't have the custom instructions applied.
+
+## 4. Optionally remove .handoff/ from the project
+
+The \`.handoff/\` directory stays until you delete it. Removing it loses
+all logged state. If you want to wipe it:
+
+${"```"}bash
+rm -rf .handoff
+${"```"}
+
+## Verify
+
+Open a new conversation in the Project and confirm Claude Desktop no
+longer references \`handoff\` commands or \`.handoff/\` files.
 `);
 }
 

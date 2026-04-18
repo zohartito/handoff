@@ -60,8 +60,13 @@ export async function switchTool(opts: SwitchOpts): Promise<void> {
     }
   }
 
-  // 4. Launch the target tool (unless --no-launch)
-  if (!opts.noLaunch) {
+  // 4. Launch the target tool (unless --no-launch).
+  // Claude Desktop is a GUI app with no reliable CLI launch shim across
+  // platforms, so we never attempt launch for it — the user opens it
+  // manually and pastes from clipboard.
+  const canLaunch = opts.tool !== "claude-desktop";
+  const effectiveNoLaunch = opts.noLaunch === true || !canLaunch;
+  if (!effectiveNoLaunch) {
     const launched = await launchTool(opts.tool, cwd);
     if (!launched) {
       process.stderr.write(
@@ -72,7 +77,7 @@ export async function switchTool(opts: SwitchOpts): Promise<void> {
   }
 
   // 5. Tell the user what happened
-  printSummary(opts.tool, autoInjected, opts.noLaunch === true);
+  printSummary(opts.tool, autoInjected, effectiveNoLaunch);
 }
 
 // ------------- clipboard -------------
@@ -169,6 +174,10 @@ function launchCommand(tool: Tool, cwd: string): [string, string[]] | [null, nul
     case "claude-code":
       // `claude` opens in the current directory; hooks do the rest.
       return ["claude", []];
+    case "claude-desktop":
+      // GUI app with no reliable cross-platform CLI launcher. Handled
+      // upstream by canLaunch=false, but be explicit here too.
+      return [null, null];
     case "cursor":
       // `cursor <dir>` opens Cursor in that folder.
       return ["cursor", [cwd]];
@@ -202,7 +211,12 @@ function printSummary(tool: Tool, autoInjected: boolean, noLaunch: boolean): voi
 
   if (!autoInjected) {
     lines.push("");
-    lines.push(`   paste the primer as your first message in ${tool}.`);
+    if (tool === "claude-desktop") {
+      lines.push(`   open Claude Desktop manually, start a new conversation in the`);
+      lines.push(`   Project for this folder, and paste the primer as your first message.`);
+    } else {
+      lines.push(`   paste the primer as your first message in ${tool}.`);
+    }
   }
 
   lines.push("");

@@ -104,7 +104,7 @@ program
 program
   .command("prime")
   .description("emit a primer prompt for a target tool")
-  .option("--tool <tool>", "target tool (claude-code, cursor, codex, gemini, generic)", "generic")
+  .option("--tool <tool>", "target tool (claude-code, claude-desktop, cursor, codex, gemini, generic)", "generic")
   .option("--max-chars <n>", "truncate to fit", (v) => parseInt(v, 10))
   .option("--compact", "emit a task-focused primer (< 2k chars) instead of the full artifact")
   .option("--subagent", "emit a subagent primer (for Claude Code task-subagents; ~1.5k chars, no writes)")
@@ -119,16 +119,16 @@ program
 
 program
   .command("install")
-  .description("print integration instructions for a tool (claude-code, cursor)")
-  .requiredOption("--tool <tool>", "claude-code | cursor")
+  .description("print integration instructions for a tool (claude-code, claude-desktop, cursor)")
+  .requiredOption("--tool <tool>", "claude-code | claude-desktop | cursor")
   .action(async (opts) => {
     await install({ tool: opts.tool });
   });
 
 program
   .command("uninstall")
-  .description("print removal instructions for a tool (claude-code, cursor)")
-  .requiredOption("--tool <tool>", "claude-code | cursor")
+  .description("print removal instructions for a tool (claude-code, claude-desktop, cursor)")
+  .requiredOption("--tool <tool>", "claude-code | claude-desktop | cursor")
   .action(async (opts) => {
     await uninstall({ tool: opts.tool });
   });
@@ -149,7 +149,7 @@ program
 
 program
   .command("switch <tool>")
-  .description("hand off to another tool: save + prime + clipboard + launch (tool: claude-code | cursor | codex | gemini)")
+  .description("hand off to another tool: save + prime + clipboard + launch (tool: claude-code | claude-desktop | cursor | codex | gemini)")
   .option("--no-save", "skip `handoff save` before switching")
   .option("--no-launch", "copy primer to clipboard but don't launch the tool")
   .action(async (tool, opts) => {

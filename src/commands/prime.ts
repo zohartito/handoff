@@ -3,7 +3,13 @@ import { exists, readOrEmpty } from "../util/fs.js";
 import type { Meta } from "../format/types.js";
 import { loadMeta } from "../format/migrate.js";
 
-export type Tool = "claude-code" | "cursor" | "codex" | "gemini" | "generic";
+export type Tool =
+  | "claude-code"
+  | "claude-desktop"
+  | "cursor"
+  | "codex"
+  | "gemini"
+  | "generic";
 
 /**
  * Threshold at which --max-chars implicitly switches to compact mode.
@@ -118,6 +124,12 @@ function preambleFor(tool: Tool, meta: Meta | null): string {
   const toolNote: Record<Tool, string> = {
     "claude-code":
       "You are Claude Code. After reading this, also re-read project CLAUDE.md if present.",
+    "claude-desktop": [
+      "You are Claude Desktop. Treat everything below as additional system prompt context.",
+      "You don't have a shell by default; use your filesystem MCP tools (or the files attached to this Project) to read `.handoff/` — not `cat`.",
+      "Before you respond: read every file under `.handoff/` with your filesystem MCP tools — task.md, progress.md, decisions.md, attempts.md, corrections.md, open-loops.md, environment.md, identity.md, codebase-map.md, references.md. If filesystem MCP isn't configured, ask the user to attach those files to this Project.",
+      "At session end: write the full conversation to `.handoff/transcript.md`, then update `.handoff/task.md`, `.handoff/progress.md`, `.handoff/decisions.md`, and `.handoff/corrections.md` with anything new from this session.",
+    ].join("\n"),
     cursor: "You are Cursor. After reading this, also re-read .cursorrules if present.",
     codex: [
       "You are Codex / OpenAI coding agent. Treat everything below as additional system prompt context.",
@@ -153,6 +165,8 @@ function suggestedSwitchTarget(tool: Tool): Tool {
   switch (tool) {
     case "claude-code":
       return "codex";
+    case "claude-desktop":
+      return "claude-code";
     case "codex":
       return "claude-code";
     case "cursor":
@@ -197,6 +211,8 @@ function compactPreambleFor(tool: Tool): string {
   const toolLine: Record<Tool, string> = {
     "claude-code":
       "You are Claude Code. Also re-read project CLAUDE.md if present.",
+    "claude-desktop":
+      "You are Claude Desktop. Read `.handoff/` via filesystem MCP (or Project files) — no shell. At session end, write `.handoff/transcript.md` + update task.md/progress.md/corrections.md.",
     cursor: "You are Cursor. Also re-read .cursorrules if present.",
     codex:
       "You are Codex. Your tools are `shell`, `read_file`, `write_file`, `apply_patch`. Prior Claude Code `Edit`/`Bash` attempts map to your `apply_patch`/`shell`.",

@@ -258,6 +258,61 @@ test("gemini full primer references @-reference usage", async () => {
   assert.match(out, /run_shell_command/);
 });
 
+// -- claude-desktop primer variant ----------------------------------------
+
+test("claude-desktop full primer references filesystem MCP and NOT shell/cat", async () => {
+  const paths = scaffoldRealisticHandoff();
+  const out = await buildPrimer(paths, "claude-desktop", Infinity);
+  // Tuned for a GUI client, not a CLI: mentions filesystem MCP or file tools,
+  // and never tells the agent to run a shell.
+  assert.match(out, /filesystem MCP/i);
+  assert.doesNotMatch(out, /\bcat \.handoff/);
+  // Says to read `.handoff/` files before responding.
+  assert.match(out, /\.handoff\//);
+  assert.match(out, /before (you )?respond/i);
+});
+
+test("claude-desktop full primer tells the agent to dump transcript and update logs at session end", async () => {
+  const paths = scaffoldRealisticHandoff();
+  const out = await buildPrimer(paths, "claude-desktop", Infinity);
+  // Transcript dump is the key session-end behavior that distinguishes
+  // claude-desktop from the other primers (it has no hook to fire `save`).
+  assert.match(out, /transcript\.md/);
+  assert.match(out, /task\.md/);
+  assert.match(out, /progress\.md/);
+  assert.match(out, /corrections\.md/);
+});
+
+test("claude-desktop compact primer is task-focused and stays under the compact envelope", async () => {
+  const paths = scaffoldRealisticHandoff();
+  const out = await buildCompactPrimer(paths, "claude-desktop");
+  // Keeps the filesystem-MCP framing even in compact mode.
+  assert.match(out, /filesystem MCP/i);
+  // Task is still present.
+  assert.match(out, /portable session-state CLI/);
+  // Stays small enough for a paste into a single Desktop message.
+  assert.ok(
+    out.length < 2200,
+    `claude-desktop compact primer too long: ${out.length}`,
+  );
+});
+
+test("claude-desktop rate-limit protocol suggests switching to claude-code (same account, different tool)", async () => {
+  const paths = scaffoldRealisticHandoff();
+  const out = await buildPrimer(paths, "claude-desktop", Infinity);
+  assert.match(out, /handoff switch claude-code/);
+  assert.match(out, /handoff correct "hit rate limit on claude-desktop"/);
+});
+
+test("claude-desktop subagent primer is write-locked like the other tools", async () => {
+  const paths = scaffoldRealisticHandoff();
+  const out = await buildSubagentPrimer(paths, "claude-desktop");
+  // Subagent framing is tool-agnostic, so this is a smoke test that the
+  // new Tool value flows through without blowing up.
+  assert.match(out, /Do NOT modify/);
+  assert.match(out, /spawned from a parent session/);
+});
+
 test("COMPACT_THRESHOLD is 2000 and drives the implicit-compact branch", () => {
   assert.equal(COMPACT_THRESHOLD, 2000);
 });

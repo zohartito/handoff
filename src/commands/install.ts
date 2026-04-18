@@ -1,10 +1,12 @@
-type Tool = "claude-code" | "cursor";
+type Tool = "claude-code" | "claude-desktop" | "cursor";
 
 type InstallOpts = { tool: Tool };
 
 export async function install(opts: InstallOpts): Promise<void> {
   if (opts.tool === "claude-code") {
     printClaudeCode();
+  } else if (opts.tool === "claude-desktop") {
+    printClaudeDesktop();
   } else if (opts.tool === "cursor") {
     printCursor();
   } else {
@@ -112,6 +114,80 @@ ${"```"}
 
 Open a new Claude Code session in the project — the primer loads
 automatically in the new session's context.
+`);
+}
+
+function printClaudeDesktop(): void {
+  console.log(`# Claude Desktop integration
+
+Claude Desktop is a GUI app with no hook system, so there's nothing to
+wire up automatically — integration is three manual steps.
+
+## 1. Create a Claude Desktop Project for this folder
+
+In Claude Desktop, open **Projects** and make a new Project for this
+codebase. Projects persist custom instructions and attached files across
+conversations — that's the hook we lean on here.
+
+Suggested Project-level custom instructions:
+
+${"```"}
+This project uses \`handoff\` for portable session state across AI tools.
+
+At session start, read every file under \`.handoff/\` before responding:
+task.md, progress.md, decisions.md, attempts.md, corrections.md,
+open-loops.md, environment.md, identity.md, codebase-map.md,
+references.md.
+
+At session end, dump this conversation to \`.handoff/transcript.md\` and
+update task.md / progress.md / decisions.md / corrections.md with
+anything new from the session.
+${"```"}
+
+## 2. Give Claude Desktop access to \`.handoff/\`
+
+You have two options — pick whichever matches your setup:
+
+### Option A: filesystem MCP (recommended)
+
+If you have the filesystem MCP server configured and pointed at this
+project root, Claude Desktop can read and write \`.handoff/\` files
+directly. In that case new conversations just need the primer:
+
+${"```"}bash
+handoff prime --tool claude-desktop | clip       # Windows
+handoff prime --tool claude-desktop | pbcopy     # macOS
+handoff prime --tool claude-desktop | wl-copy    # Linux (Wayland)
+${"```"}
+
+Paste the primer as your first message. Claude Desktop will read
+\`.handoff/\` via filesystem MCP on its own.
+
+### Option B: attach files to the Project
+
+If you don't run the filesystem MCP server, open the Project in Claude
+Desktop and upload the \`.handoff/*.md\` files as Project attachments.
+They'll be in context for every conversation in the Project.
+
+On each handoff, re-upload any files that changed (or use
+\`handoff save\` locally first to refresh \`environment.md\`).
+
+## 3. (Optional) Obsidian MCP
+
+If you run the Obsidian MCP server, mention your vault path in the
+Project's custom instructions — e.g. "my Obsidian vault is at
+\`/Users/me/Obsidian/brain\`". Then \`handoff obsidian sync\` decisions
+and rules become queryable from inside any Claude Desktop conversation.
+
+## Verify
+
+${"```"}bash
+handoff init --from claude-code       # (if not already done)
+handoff status
+${"```"}
+
+Open a new conversation in your Claude Desktop Project, paste the primer,
+and confirm it reads a file from \`.handoff/\` before answering.
 `);
 }
 
