@@ -45,3 +45,24 @@ test("`handoff install --tool cursor` output references the cursor handoff-switc
     "expected install output to reference templates/cursor/slash-handoff-switch.md",
   );
 });
+
+test("`handoff install --tool claude-desktop` output explains the manual Project-based setup", async () => {
+  const out = await captureStdout(() => install({ tool: "claude-desktop" }));
+
+  // A Claude Desktop "Project" is the persistence unit we lean on, so the
+  // install instructions must tell the user to create one.
+  assert.match(out, /Project/, "expected install output to reference Claude Desktop Projects");
+  // Filesystem MCP is one of the two documented access modes.
+  assert.match(out, /filesystem MCP/i);
+  // The suggested clipboard-paste workflow uses `handoff prime --tool claude-desktop`.
+  assert.match(out, /handoff prime --tool claude-desktop/);
+  // It should warn that there's no hook / automated integration.
+  assert.match(out, /no hook system/i);
+});
+
+test("`handoff install --tool claude-desktop` mentions Obsidian MCP as an optional enhancement", async () => {
+  const out = await captureStdout(() => install({ tool: "claude-desktop" }));
+  // Obsidian MCP is an optional bonus — not mandatory, but called out
+  // because `handoff obsidian sync` composes with it.
+  assert.match(out, /Obsidian/);
+});
