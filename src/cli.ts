@@ -8,6 +8,7 @@ import { status } from "./commands/status.js";
 import { attempt } from "./commands/attempt.js";
 import { decide } from "./commands/decide.js";
 import { correct } from "./commands/correct.js";
+import { capture } from "./commands/capture.js";
 import { save } from "./commands/save.js";
 import { prime } from "./commands/prime.js";
 import { install } from "./commands/install.js";
@@ -98,6 +99,56 @@ program
       action,
       userSaid: opts.userSaid,
       lesson: opts.lesson,
+    });
+  });
+
+program
+  .command("capture")
+  .description("dump an end-of-session transcript (AI-runnable) + extract markers")
+  .option("--from <source>", "input source: 'stdin' or 'file'")
+  .option("--file <path>", "path to transcript file (when --from file)")
+  .option("--mode <mode>", "'full' (default) or 'summary'", "full")
+  .option("--task <file>", "override target for extracted TASK: lines")
+  .option("--decisions <file>", "override target for extracted DECISION: lines")
+  .option("--corrections <file>", "override target for extracted CORRECTION: lines")
+  .action(async (opts) => {
+    const mode = opts.mode === "summary" ? "summary" : "full";
+    if (opts.mode && opts.mode !== "full" && opts.mode !== "summary") {
+      console.error(`capture: invalid --mode '${opts.mode}' (use 'full' or 'summary')`);
+      process.exitCode = 1;
+      return;
+    }
+    const fromStdin = opts.from === "stdin";
+    const fromFile = opts.from === "file";
+    if (opts.from && !fromStdin && !fromFile) {
+      console.error(`capture: invalid --from '${opts.from}' (use 'stdin' or 'file')`);
+      process.exitCode = 1;
+      return;
+    }
+    if (fromStdin && opts.file) {
+      console.error("capture: --from stdin cannot be combined with --file");
+      process.exitCode = 1;
+      return;
+    }
+    if (fromFile && !opts.file) {
+      console.error("capture: --from file requires --file <path>");
+      process.exitCode = 1;
+      return;
+    }
+    if (!opts.from && !opts.file) {
+      console.error("capture: specify --from stdin or --from file --file <path>");
+      process.exitCode = 1;
+      return;
+    }
+    const source = fromFile || opts.file
+      ? ({ kind: "file", path: opts.file } as const)
+      : ({ kind: "stdin" } as const);
+    await capture({
+      source,
+      mode,
+      taskPath: opts.task,
+      decisionsPath: opts.decisions,
+      correctionsPath: opts.corrections,
     });
   });
 
