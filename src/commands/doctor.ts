@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { promises as fs } from "node:fs";
 import { homedir, platform } from "node:os";
 import { resolve } from "node:path";
 import { resolveHandoffPaths } from "../format/paths.js";
@@ -12,6 +13,9 @@ const run = promisify(execFile);
 
 type Level = "ok" | "warn" | "err";
 type Check = { level: Level; label: string; detail?: string };
+
+/** Package name this CLI is shipped under. */
+const PACKAGE_NAME = "@zohartito/handoff";
 
 export async function doctor(opts: { cwd?: string } = {}): Promise<void> {
   const cwd = opts.cwd ?? process.cwd();
@@ -93,6 +97,18 @@ export async function doctor(opts: { cwd?: string } = {}): Promise<void> {
         label: `${filled}/${total} files have content`,
       });
     }
+
+    // 3b. Stale empty .jsonl files left over from <=0.6 `handoff init`.
+    // v0.7 stopped pre-creating these. If they exist and are empty (or just a
+    // single newline byte) we flag them so follow-up agents don't open them
+    // expecting tool history.
+    for (const [label, p] of [
+      ["transcript.jsonl", paths.transcript],
+      ["tool-history.jsonl", paths.toolHistory],
+    ] as const) {
+      const staleCheck = await checkStaleJsonl(p, label);
+      if (staleCheck) projectChecks.push(staleCheck);
+    }
   }
 
   printChecks(projectChecks);
@@ -117,6 +133,14 @@ export async function doctor(opts: { cwd?: string } = {}): Promise<void> {
   } else {
     globalChecks.push({ level: "ok", label: `handoff → ${binPath}` });
   }
+
+  // 4b. Stale npm shim pointing at an old package name (e.g. `@handoff/cli`).
+  // This is the failure from the 0.7 upgrade: the user had a `handoff.cmd`
+  // shim left behind from a previous (differently-named) install, and running
+  // it threw MODULE_NOT_FOUND because the target package no longer exists.
+  const shimChecks = await checkGlobalShims();
+  globalChecks.push(...shimChecks);
+
   // Note: we intentionally do not network-call the npm registry for a latest-version
   // check here — keeps `handoff doctor` offline-safe. Run `npm outdated -g @zohartito/handoff`
   // manually if you want to know.
@@ -256,6 +280,149 @@ async function findOnPath(bin: string): Promise<string | null> {
     return first ?? null;
   } catch {
     return null;
+  }
+}
+
+/**
+ * Resolve the global npm bin directory. Returns null if npm isn't installed
+ * or the command fails — callers should skip the check in that case.
+ *
+ * On Windows the shims live in `%APPDATA%\npm\`, on POSIX in
+ * `$(npm prefix -g)/bin/`.
+ */
+async function globalNpmBinDir(): Promise<string | null> {
+  const isWin = platform() === "win32";
+  if (isWin) {
+    const appData = process.env.APPDATA;
+    if (!appData) return null;
+    const dir = resolve(appData, "npm");
+    return (await exists(dir)) ? dir : null;
+  }
+  try {
+    const { stdout } = await run("npm", ["prefix", "-g"]);
+    const prefix = stdout.trim();
+    if (!prefix) return null;
+    return resolve(prefix, "bin");
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Return shim file names to inspect on the current platform. On Windows npm
+ * writes three shims per bin (`handoff`, `handoff.cmd`, `handoff.ps1`); on
+ * POSIX it writes a single symlink (`handoff`).
+ */
+function shimNames(): string[] {
+  return platform() === "win32"
+    ? ["handoff", "handoff.cmd", "handoff.ps1"]
+    : ["handoff"];
+}
+
+/**
+ * Scan a shim's content (or the file it resolves to) for a package name.
+ * Returns the first non-`@zohartito/handoff` scoped package reference found,
+ * or null if the shim looks healthy.
+ *
+ * npm shims on Windows are small `.cmd` / `.ps1` wrappers that include the
+ * path to the target `.mjs` file. On POSIX they're symlinks whose target
+ * path embeds the package name. In both cases the package name is plain
+ * text inside the referenced path.
+ */
+export async function inspectShimForWrongPackage(shimPath: string): Promise<string | null> {
+  let content: string;
+  try {
+    content = await fs.readFile(shimPath, "utf8");
+  } catch {
+    // Might be a symlink on POSIX — resolve it instead.
+    try {
+      const target = await fs.readlink(shimPath);
+      content = target;
+    } catch {
+      return null;
+    }
+  }
+  // Look for scoped package references of the form `@scope/name` or
+  // `@scope\name`. Any scoped reference in the shim that isn't our package is
+  // suspicious — most commonly this is `@handoff/cli` left over from the
+  // pre-rename install. We accept both slash directions because Windows shims
+  // (`.cmd` / `.ps1`) use backslashes in their embedded paths.
+  const matches = content.match(/@[a-z0-9][a-z0-9._-]*[\\/][a-z0-9][a-z0-9._-]*/gi);
+  if (!matches) return null;
+  for (const m of matches) {
+    // Normalise to forward-slash for comparison against PACKAGE_NAME.
+    const normalised = m.replace(/\\/g, "/").toLowerCase();
+    if (normalised !== PACKAGE_NAME.toLowerCase()) {
+      return normalised;
+    }
+  }
+  return null;
+}
+
+/**
+ * Check every shim in the global npm bin dir for a reference to a wrong
+ * package name. Returns check results only when there's something to say;
+ * a clean shim set produces a single "ok" check.
+ */
+async function checkGlobalShims(): Promise<Check[]> {
+  const binDir = await globalNpmBinDir();
+  if (!binDir) {
+    return [
+      {
+        level: "ok",
+        label: "global npm bin dir not found — skipping shim check",
+        detail: "npm not installed, or $APPDATA / `npm prefix -g` unavailable",
+      },
+    ];
+  }
+  const stale: Array<{ path: string; wrongPackage: string }> = [];
+  const found: string[] = [];
+  for (const name of shimNames()) {
+    const shimPath = resolve(binDir, name);
+    if (!(await exists(shimPath))) continue;
+    found.push(shimPath);
+    const wrongPackage = await inspectShimForWrongPackage(shimPath);
+    if (wrongPackage) stale.push({ path: shimPath, wrongPackage });
+  }
+  if (found.length === 0) {
+    return []; // nothing installed — already covered by the PATH check above
+  }
+  if (stale.length === 0) {
+    return [{ level: "ok", label: `shim targets ${PACKAGE_NAME} (${found.length} file${found.length === 1 ? "" : "s"})` }];
+  }
+  const paths = stale.map((s) => s.path).join(" ");
+  const wrongPkgs = [...new Set(stale.map((s) => s.wrongPackage))].join(", ");
+  const rmCmd = platform() === "win32" ? `del ${paths}` : `rm ${paths}`;
+  return [
+    {
+      level: "err",
+      label: `stale shim detected (points at ${wrongPkgs})`,
+      detail: `remove and reinstall: ${rmCmd} && npm install -g ${PACKAGE_NAME}`,
+    },
+  ];
+}
+
+/**
+ * Flag a `.jsonl` file that exists but is empty/near-empty (<=1 byte). These
+ * are leftovers from <=0.6 `handoff init`, which pre-created them.
+ *
+ * Returns null if the file is absent (fine — v0.7 doesn't create it) or if
+ * the file has real content (fine — something has logged to it).
+ */
+async function checkStaleJsonl(
+  path: string,
+  label: string,
+): Promise<Check | null> {
+  try {
+    const stat = await fs.stat(path);
+    if (stat.size > 1) return null; // has real content
+    return {
+      level: "warn",
+      label: `${label} is empty (0-byte leftover from old init)`,
+      detail: `delete it (will be recreated by \`handoff capture\` on first write) or run \`handoff capture\``,
+    };
+  } catch {
+    return null; // absent — that's the happy path in 0.7+
   }
 }
 
