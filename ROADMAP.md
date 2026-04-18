@@ -172,6 +172,7 @@ Dogfooded into existence: a Claude Desktop conversation with no on-disk transcri
 - [x] `handoff doctor` — stale-shim detection (the `@handoff/cli` ghost install we kept hitting) plus empty-jsonl warnings.
 - [x] `handoff init` — stop creating empty 1-byte `transcript.jsonl` / `tool-history.jsonl` files. They're created on first write by `capture` or `ingest` instead.
 - [x] 113 → 159 tests (+46 new): paste adapter, capture command, desktop primer, install/switch/uninstall for desktop, doctor shim detection, init cleanup.
+- [x] **0.7.1 patch** — caught in smoke test: Stream A added `file`/`stdin`/`clipboard` to `IngestOpts` but never registered them as commander `.option()`s, so `handoff ingest --from paste --file <path>` errored with `unknown option`. Fix wires the three flags through `cli.ts` and updates `--from`'s help text to list `paste`.
 
 ---
 

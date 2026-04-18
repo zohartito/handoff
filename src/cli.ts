@@ -214,12 +214,15 @@ program
 program
   .command("ingest")
   .description("read a past AI-agent session and emit a structured summary for populating .handoff/")
-  .option("--from <tool>", "source tool (claude-code | cursor | codex | gemini)")
+  .option("--from <tool>", "source tool (claude-code | cursor | codex | gemini | paste)")
   .option("--all", "ingest the most recent session from every source and concatenate")
   .option("--session <id>", "session id (or 'latest')", "latest")
   .option("--list", "list recent sessions instead of ingesting")
   .option("--out <path>", "write to file instead of stdout")
   .option("--project <path>", "project path to scope session discovery (default: cwd)")
+  .option("--file <path>", "(--from paste) read transcript from file")
+  .option("--stdin", "(--from paste) read transcript from stdin")
+  .option("--clipboard", "(--from paste) read transcript from system clipboard")
   .action(async (opts) => {
     await ingest({
       from: opts.from,
@@ -228,6 +231,9 @@ program
       list: opts.list,
       out: opts.out,
       project: opts.project,
+      file: opts.file,
+      stdin: opts.stdin,
+      clipboard: opts.clipboard,
     });
   });
 
