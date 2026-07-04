@@ -46,7 +46,7 @@
   },
   "homepage": "https://github.com/zohartito/handoff#readme",
   "dependencies": {
-    "commander": "^12.1.0"
+    "commander": "^15.0.0"
   },
   "devDependencies": {
     "@types/node": "^26.1.0",
