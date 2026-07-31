@@ -137,3 +137,9 @@ most bubbles returned empty/missing workspaceUris; filtering by project yielded 
 
 **fix:** handoff obsidian sync --vault ~/SynologyDrive/Obsidian/OpenClaw-Brain → 1 daily, 7 decisions, 2 rules; Daily/2026-04-16.md created
 ---
+
+## 2026-07-31T18:41:34.331Z
+**tried:** re-validated 0.7.1 end-to-end on macOS (2026-07-31 audit pass)
+
+**fix:** 160/160 tests green; every CLI command exercised live; pbcopy clipboard verified via pbpaste; ingest path branches confirmed for claude-code/cursor/codex/gemini
+---

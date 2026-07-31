@@ -13,9 +13,9 @@ on the user. Each item should be actionable: what's the next thing someone
 (agent or user) would do.
 -->
 
-- [x] ~~Write `handoff ingest --from cursor` (companion to `--from claude-code`) so Cursor sessions can be imported the same way~~ — shipped in `src/adapters/cursor.ts`; output shape matches `renderMarkdown` exactly (section-for-section identical)
-- [ ] Run end-to-end cross-tool handoff test: start a task in Claude Code, hand off to Cursor mid-task (or vice-versa), verify the receiving tool picks up context without re-explanation
-- [ ] Add `ingest --from codex` and `--from gemini` adapters (not urgent; current two cover the primary handoff pair)
-- [ ] Publish to GitHub (public repo)
-- [ ] Publish to npm so `npm install -g handoff` works
-- [ ] Document the Claude Code hook install recipe in the README (SessionStart / Stop / StopFailure)
+- [ ] Live Linux desktop validation: clipboard cascade (wl-copy → xclip → xsel) and detached tool launch have only run under CI, never on real Linux hardware. See `CROSS-PLATFORM.md` → "Requires live testing".
+- [ ] macOS launch-spawn validation: `handoff switch <tool>` without `--no-launch` (detached spawn of cursor/claude/codex/gemini) hasn't been observed live; clipboard path is verified.
+- [ ] `ingest --from cursor` parse of a real populated `state.vscdb` on macOS (path scan verified, parse not yet observed with real data).
+- [ ] Review the two unmerged remote branches `wip/autosync-mac-handoff` and `wip/autosync-pc-handoff` (each 1 commit ahead of main): PR them or confirm abandoned, then delete.
+- [ ] `local-llm-radar` PR #37 (typescript 7.0.2 bump): apply the same resolution as handoff PR #12 — close it and add a dependabot ignore for typescript semver-majors (ts-jest peer range also excludes TS7 there).
+- [ ] Adoption gate for v8+ (auto-rule promotion, more adapters): don't build until npm >100 downloads/wk OR 3+ external issues OR a community shoutout. Check occasionally: `npm view @zohartito/handoff` + repo issues.

@@ -25,11 +25,11 @@ Human notes:
 
 ## Auto
 
-_refreshed: 2026-04-17T04:34:48.987Z_
-- os: darwin 25.3.0 (arm64)
+_refreshed: 2026-07-31T18:41:34.389Z_
+- os: darwin 27.0.0 (arm64)
 - user: zohartito
-- node: v23.7.0
-- cwd: `/Users/zohartito/Documents/handoff`
+- node: v22.22.3
+- cwd: `/Users/zohartito/projects/handoff`
 - git branch: `main`
 
 ### git status
@@ -38,25 +38,38 @@ _refreshed: 2026-04-17T04:34:48.987Z_
 M .handoff/attempts.md
  M .handoff/environment.md
  M .handoff/meta.json
+ M .handoff/open-loops.md
+ M .handoff/progress.md
+ M .handoff/task.md
+?? .claude/LOOP.md
+?? .claude/STATE.md
+?? .claude/lessons.md
+?? .claude/loop-budget.md
+?? .claude/safety.md
+?? .dream-config
+?? CLAUDE.md
 ```
 
 ### recent commits
 
 ```
-90c28c2 chore(v1.6): hand off mac/linux validation to MacBook via .handoff/task.md
-63cdfd8 feat(v4): permanent memory - obsidian sync, cross-project search + patterns (0.4.0)
-3ea546a feat(v2.5/v3): agent-initiated handoffs + concurrency safety (0.3.0)
-1f1f0f0 chore(v1.6): suppress 'Source tool: unknown', refresh own .handoff/, add v1.6 roadmap
-ca0a849 feat(v1.5): ingest --all, compact primer, schema migration, cross-platform
+765a8b3 docs: sync README/CROSS-PLATFORM/ROADMAP to 0.7.1 reality
+12bd0c0 fix: add missing lint script; reject unknown --tool in prime
+056e8e5 build(deps): bump actions/setup-node from 6 to 7 (#13)
+9b6d8f0 build(deps-dev): bump tsx from 4.23.0 to 4.23.1 (#14)
+15d3086 build(deps-dev): bump @types/node from 26.1.0 to 26.1.1 (#11)
 ```
 
 ### diff stat
 
 ```
-.handoff/attempts.md    | 54 +++++++++++++++++++++++++++++++++++++++++++++++++
- .handoff/environment.md | 25 +++++++++--------------
- .handoff/meta.json      |  2 +-
- 3 files changed, 64 insertions(+), 17 deletions(-)
+.handoff/attempts.md    |   6 +++
+ .handoff/environment.md |  33 ++++++++------
+ .handoff/meta.json      |   2 +-
+ .handoff/open-loops.md  |  12 ++---
+ .handoff/progress.md    |  63 +++++++++-----------------
+ .handoff/task.md        | 115 ++++++++++--------------------------------------
+ 6 files changed, 76 insertions(+), 155 deletions(-)
 ```
 
 ## Human notes

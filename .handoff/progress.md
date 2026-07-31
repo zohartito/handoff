@@ -14,56 +14,33 @@ Update as state changes. Delete stale items.
 
 ## Done
 
-### v0.1 — foundations (shipped)
-- `handoff init` scaffolds `.handoff/` in any project
-- `handoff attempt|decide|correct|save|status` lifecycle commands
-- `handoff prime --tool <tool>` emits a primer for any target tool
-- `handoff install --tool claude-code|cursor` prints integration recipe
-- Claude Code hooks (SessionStart / Stop / StopFailure rate_limit) auto-inject the primer
+Everything through v7 has shipped and is published as `@zohartito/handoff@0.7.1`.
+Full per-milestone history lives in `ROADMAP.md` (it doubles as the changelog).
+Summary:
 
-### v1.0 — multi-tool ingest (shipped @ 0.1.x)
-- `handoff ingest --from claude-code` parses `~/.claude/projects/<enc>/*.jsonl`
-- `handoff ingest --from cursor` reads Cursor's SQLite state.vscdb via `node:sqlite`
-- `handoff ingest --from codex` parses `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`
-- `handoff ingest --from gemini` parses `~/.gemini/tmp/<hash>/chats/*.json`
-- `handoff switch <tool>` — save + prime + clipboard + launch in one shot
-- `handoff doctor` scans project + global install for common issues
-- `handoff uninstall --tool <tool>` prints removal instructions
-- Cross-tool round-trip test — Codex-validated; all 4 primers 4/4; caught one ingest scoping bug that shipped as 0.1.1
-- Published `@zohartito/handoff@0.1.0` → `0.1.1` to npm
-- Repo live at github.com/zohartito/handoff
-
-### v1.5 — polish (shipped @ 0.2.0)
-- `handoff ingest --all` orchestrator across all 4 sources with graceful per-source fallback
-- Compact primer mode (`--compact`, <2k chars typical)
-- Tool-tuned codex + gemini primers (apply_patch / @-references mappings)
-- Schema migration framework in `src/format/migrate.ts` (`loadMeta`)
-- Cross-platform audit: linux clipboard cascade (wl-copy → xclip → xsel), Cursor user dir per-OS, case-sensitivity fix; see `CROSS-PLATFORM.md`
-- `corrections.md` template seeded with "don't re-explain the project" rule
-- Doctor: detects hooks-configured-but-handoff-not-in-PATH
-- 37 → 113 tests (0 regressions)
+- **v0.1–v1.0 (0.1.x):** init/status/save/attempt/decide/correct lifecycle, primers for all tools, Claude Code hooks, ingest adapters for claude-code / cursor / codex / gemini, switch, doctor, uninstall, npm + GitHub published.
+- **v1.5–v1.6 (0.2.0):** ingest --all, compact primer, tool-tuned primers, schema migration framework, cross-platform audit, launchers in `scripts/`.
+- **v2.5/v3 (0.3.0):** one-button `switch` (save+prime+clipboard+launch), agent-initiated handoff protocol in primers, in-session slash commands, subagent primer, `withFileLock` concurrency safety.
+- **v4 (0.4.0):** `obsidian sync` (Daily/Decisions/Rules), `handoff search`, `handoff patterns`.
+- **v5 (0.5.0):** CI matrix ubuntu/macos/windows × Node 22/24, engines >=22.5, test runner script.
+- **v6 (0.6.0):** ingest persists to `.handoff/ingested-context.md`, prime surfaces it.
+- **v7 (0.7.0/0.7.1):** `ingest --from paste`, `handoff capture`, Claude Desktop primer/install/switch, doctor stale-shim + empty-jsonl detection.
+- **2026-07-31 audit pass:** full macOS re-validation at 0.7.1 (160/160 tests, all CLI commands live, pbcopy clipboard verified), docs synced to reality, missing `lint` script added, `prime --tool <unknown>` now rejects, git tags v0.1.0–v0.4.0 backfilled, dependabot ignores TS majors.
 
 ## In flight
 
-_(none — v1.5 just shipped)_
+_(none — maintenance mode)_
 
 ## Blocked
 
-- **Pre-rate-limit detection**: Claude Code only fires `StopFailure` after the rate-limit hits. Blocked upstream until Claude Code exposes a pre-rate-limit event. Tracked in `README.md` "Known limitations" and as a v3 precondition.
+- **Pre-rate-limit detection**: Claude Code only fires `StopFailure` after the rate-limit hits. Blocked upstream until Claude Code exposes a pre-rate-limit event. Tracked in `README.md` "Known limitations".
 
 ## Next
 
-### v1.6 — loose ends (small)
-- Live mac/linux validation pass (code-audited, not hardware-tested; see `CROSS-PLATFORM.md` → "Requires live testing")
-- System-tray / keyboard-shortcut variant of `handoff switch` (deferred from v2.5)
+Adoption-gated (see ROADMAP "Future"): don't build v8+ (auto-rule promotion,
+Aider/Continue/Zed adapters, lease coordination, replay/diff, git hooks,
+statusbar extension) until npm >100 downloads/wk OR 3+ external issues OR a
+community shoutout.
 
-### v3 — agent-initiated handoffs (planned)
-- Primer detects "about to hit rate limits" signal
-- In-session slash command triggers `handoff switch` without leaving the session
-- Claude Code subagent primer variant (spawned agents inherit `.handoff/` context)
-- Multi-agent coordination (file locking / JSONL append semantics for 2+ tools on same `.handoff/`)
-
-### v4 — permanent memory (planned)
-- Obsidian vault integration — session summaries → daily notes, decisions → Decisions/, corrections → rules
-- `handoff search "<query>"` across all projects' `.handoff/`
-- Auto-extract cross-project patterns
+Remaining validation loose ends are in `open-loops.md` (live Linux desktop,
+macOS launch-spawn, cursor real-data parse).
