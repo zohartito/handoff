@@ -294,13 +294,12 @@ Optional launchers live in `scripts/` (AutoHotkey v2 for Windows, AppleScript fo
 
 ## Roadmap
 
-v1.0 ships with Claude Code auto-inject, Cursor via switch, and ingest for both. See `ROADMAP.md` for the full v1 through v4 plan: engineering hygiene (tests, `handoff doctor`, `handoff uninstall`), more adapters (Codex, Gemini), native integrations as MCP and hook APIs mature, a tray app, agent-initiated handoffs, and an Obsidian archive target.
+Everything through v7 has shipped (0.7.x): Claude Code auto-inject hooks, Claude Desktop primers, ingest adapters for Claude Code / Cursor / Codex / Gemini / paste, one-command `handoff switch`, agent-initiated handoffs, concurrency-safe writes, Obsidian sync, `search`/`patterns`/`capture`, and a CI matrix across ubuntu/macos/windows. `ROADMAP.md` is the authoritative per-version history (it doubles as the changelog) plus the adoption-gated future list (v8+).
 
 ## Known limitations
 
-- Only tested on Windows so far. Mac and Linux clipboard and launcher paths are in the code but unvalidated — file issues if you hit one.
+- Validated live on Windows and macOS (full CLI pass on real hardware; clipboard via `pbcopy` confirmed). Linux is covered by the CI test matrix but launcher/clipboard paths haven't run on a live Linux desktop — file issues if you hit one.
 - Proactive rate-limit warning is not possible yet. Claude Code only fires `StopFailure` after the limit is hit. Blocked upstream.
-- Schema migration logic is a placeholder. If the schema version in `meta.json` changes across a `handoff` upgrade, you may need to `handoff init --force` and re-seed.
 - `handoff ingest --from cursor` requires Node 22+ for built-in `node:sqlite`. On Node 20 it exits with a clear error.
 
 ## Contributing

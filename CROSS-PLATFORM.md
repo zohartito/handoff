@@ -1,15 +1,37 @@
 # Cross-Platform Status
 
 `handoff` was developed on Windows. This doc records what has been validated
-on Windows, what cross-platform fixes have been made in the code (but not
-yet run on a real mac or linux box), and what still needs live testing.
+per platform and what still needs live testing.
 
 ## Validated
 
-Only the Windows developer box has run the CLI end-to-end. The automated
-test suite (`npm test`) passes on Windows and exercises the platform-
-independent code paths (parsing, rendering, path comparison logic). Unit
-tests cover:
+**Windows** — full end-to-end on the original developer box (dev through 0.7.x).
+
+**macOS** — full live pass on real hardware (Apple Silicon, Darwin 27, Node
+22.22.3) at 0.7.1 on 2026-07-31, on top of the original v1.6 validation
+round (2026-04-17):
+
+- `npm ci` + `npm run build` + `npm test`: clean, 160/160 tests pass.
+- Every CLI command exercised end-to-end in a scratch project: `init`,
+  `status`, `save`, `attempt`, `decide`, `correct`, `capture`, `prime`
+  (all tools), `install`/`uninstall`, `doctor`, `patterns`, `search`.
+- `handoff --version` resolves correctly from the package root (0.7.1).
+- Clipboard: `handoff switch codex --no-launch` copied the full primer via
+  `pbcopy`; verified independently with `pbpaste`.
+- `ingest --from claude-code --list` found real sessions under
+  `~/.claude/projects/` (unix path encoding confirmed).
+- `ingest --from cursor|codex|gemini --list` each scanned the correct
+  macOS data directories (`~/Library/Application Support/Cursor/...`,
+  `~/.codex/sessions/` — 1569 rollouts parsed, `~/.gemini/tmp/`) and
+  degraded gracefully (clean exit-1 message) when no sessions matched.
+
+**Linux** — automated only: the CI matrix (ubuntu × Node 22/24) runs the
+full test suite green. Live desktop paths (clipboard cascade, launchers)
+have not run on real Linux hardware — see "Requires live testing".
+
+The automated test suite exercises the platform-independent code paths
+(parsing, rendering, path comparison logic) on all three OSes via CI.
+Unit tests cover:
 
 - `cwdMatchesProject` / `normalizeForCompare` — including the new
   platform-conditional case-sensitivity branches (win32, darwin, linux
@@ -71,38 +93,24 @@ Surgical patches applied in this audit:
 
 ## Requires live testing
 
-The following code paths are CORRECT on paper but have not been executed
-on real mac or linux hardware. Each needs someone to actually run the
-command on the target OS and confirm.
+Remaining code paths that are CORRECT on paper but have not been executed
+on live hardware.
 
-### macOS
+### macOS (mostly validated — see "Validated" above)
 
-- **`handoff switch cursor` end-to-end.** Expected: saves state, copies
-  primer to clipboard via `pbcopy`, spawns `cursor <cwd>` detached, prints
-  summary to stderr. Verify clipboard actually contains the primer
-  (paste into any text field) and that Cursor opens the project.
-- **`handoff switch claude-code` end-to-end.** Expected: saves state,
-  skips clipboard (hooks auto-inject), spawns `claude` detached.
-- **`handoff switch codex` / `handoff switch gemini`.** Same flow as
-  cursor; verify `codex` / `gemini` binaries are on PATH.
-- **`handoff ingest --from cursor`.** Depends on macOS Cursor actually
-  storing its SQLite state under `~/Library/Application Support/Cursor/
-  User/globalStorage/state.vscdb`. If Cursor on macOS uses a different
-  layout, this adapter will silently report "no Cursor state DB found"
-  even when Cursor is installed. Verify by opening Cursor, starting a
-  chat, then running `handoff ingest --from cursor --list`.
-- **`handoff ingest --from claude-code`.** Claude Code's
-  `~/.claude/projects/` path encoding on macOS uses `/` separators:
-  `/Users/foo/proj` → `-Users-foo-proj`. The `encodeProjectPath` regex
-  handles `/` and `\` and `_` and `:` — should work, but needs
-  confirmation that Claude Code on macOS actually produces that exact
-  encoding.
-- **`handoff doctor`.** Uses `which` (vs `where.exe` on Windows) to find
-  the `handoff` binary — that branch needs to run.
+Still outstanding, all in the launch-spawn path (validation runs used
+`--no-launch`):
+
+- **`handoff switch <tool>` detached launch.** Verify `cursor <cwd>` /
+  `claude` / `codex` / `gemini` actually spawn detached and open when the
+  binaries are on PATH.
+- **`handoff ingest --from cursor` with real data.** The adapter scanned
+  the correct `~/Library/Application Support/Cursor/` layout, but a parse
+  of a real populated `state.vscdb` on macOS hasn't been observed yet.
 
 ### Linux
 
-All of the above, plus:
+All launcher/clipboard paths, plus:
 
 - **Clipboard fallback order.** On a Wayland session (GNOME / KDE Plasma
   defaults on most distros), `wl-copy` should succeed and the x-servers

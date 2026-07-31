@@ -1,7 +1,12 @@
 # handoff — roadmap
 
 Portable agent state across AI coding tools. This file is the single source of
-truth for what's shipped, what's next, and what was explicitly cut.
+truth for what's shipped, what's next, and what was explicitly cut. It doubles
+as the changelog: each shipped section below maps to an npm release.
+
+> Naming note: the `v0.1`/`v1.0`/`v1.5`/`v2.5`/`v3`/`v4`… section labels are
+> internal milestone names, not semver. The actual package versions are the
+> `0.x.y` numbers noted per section (npm + git tags).
 
 ---
 
@@ -32,7 +37,7 @@ Read past sessions from every major coding tool and fold them back into
 - [x] `handoff doctor` — scan project + global install for common issues
 - [x] `handoff uninstall --tool <tool>` — print removal instructions
 - [x] Claude Code hooks (SessionStart / Stop / StopFailure with `rate_limit`) auto-inject the primer
-- [x] Test suite: 113 tests across all 4 adapters, render parity, schema migration, compact primer, cross-platform, bug-injection validated
+- [x] Test suite across all 4 adapters: render parity, schema migration, compact primer, cross-platform, bug-injection validated (count grew per-milestone; 160 as of 0.7.1)
 - [x] README.md (production, GitHub-ready)
 - [x] `handoff ingest --from codex` — parse `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`
 - [x] `handoff ingest --from gemini` — parse `~/.gemini/tmp/<hash>/chats/*.json` (+ JSONL follow-up)
@@ -145,7 +150,7 @@ Cross-platform + cross-node validation before the adapter surface kept growing.
 - [x] CI matrix — `ubuntu-latest × macos-latest × windows-latest` × Node 22 + 24 via `.github/workflows/ci.yml`
 - [x] Engines bump — `"node": ">=22.5"` in `package.json`; `node:sqlite` stabilised in 22.5 so we stopped shipping the "Node 20 works except for the Cursor adapter" caveat
 - [x] `scripts/run-tests.mjs` cross-version test runner — shells into every `test/*.test.mjs`, aggregates results, returns non-zero on any failure (so CI fails fast without each suite reimplementing the wrapper)
-- [x] `HANDOFF_SEARCH_ROOTS` Windows path-delimiter fix — `path.delimiter` (`;` on Windows, `:` on POSIX) instead of hard-coded `:`, in both `src/search.ts` and `src/patterns.ts`
+- [x] `HANDOFF_SEARCH_ROOTS` Windows path-delimiter fix — `path.delimiter` (`;` on Windows, `:` on POSIX) instead of hard-coded `:`, in both `src/commands/search.ts` and `src/commands/patterns.ts`
 
 ---
 
