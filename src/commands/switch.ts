@@ -23,7 +23,23 @@ type SwitchOpts = {
  * `handoff hook session-start`, so we skip the clipboard copy and just
  * launch it.
  */
+const SWITCH_TOOLS: ReadonlySet<string> = new Set([
+  "claude-code",
+  "claude-desktop",
+  "cursor",
+  "codex",
+  "gemini",
+]);
+
 export async function switchTool(opts: SwitchOpts): Promise<void> {
+  if (!SWITCH_TOOLS.has(opts.tool)) {
+    console.error(
+      `unknown tool: ${opts.tool} (valid: ${[...SWITCH_TOOLS].join(", ")})`,
+    );
+    process.exitCode = 1;
+    return;
+  }
+
   const cwd = opts.cwd ?? process.cwd();
   const paths = resolveHandoffPaths(cwd);
 
