@@ -4,6 +4,7 @@ import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  prime,
   buildPrimer,
   buildCompactPrimer,
   buildSubagentPrimer,
@@ -410,4 +411,23 @@ test("buildSubagentPrimer drops environment / decisions / codebase-map / referen
   assert.doesNotMatch(out, /## Identity/);
   // And no rate-limit section either — handoffs are the parent's decision.
   assert.doesNotMatch(out, /## Rate-limit protocol/);
+});
+
+test("prime rejects an unknown tool with exitCode 1 and a clear error", async () => {
+  const prevExit = process.exitCode;
+  process.exitCode = 0;
+  const origErr = console.error;
+  let stderr = "";
+  console.error = (...args: unknown[]) => {
+    stderr += args.join(" ") + "\n";
+  };
+  try {
+    await prime({ tool: "bogus" as never });
+    assert.equal(process.exitCode, 1, "exitCode set to 1 on unknown tool");
+    assert.match(stderr, /unknown tool: bogus/);
+    assert.match(stderr, /claude-code/, "error lists valid tools");
+  } finally {
+    console.error = origErr;
+    process.exitCode = prevExit;
+  }
 });

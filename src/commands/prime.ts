@@ -11,6 +11,15 @@ export type Tool =
   | "gemini"
   | "generic";
 
+export const VALID_TOOLS: ReadonlySet<string> = new Set([
+  "claude-code",
+  "claude-desktop",
+  "cursor",
+  "codex",
+  "gemini",
+  "generic",
+]);
+
 /**
  * Threshold at which --max-chars implicitly switches to compact mode.
  * The full primer has fixed framing overhead plus whatever the user has
@@ -29,6 +38,14 @@ type PrimeOpts = {
 };
 
 export async function prime(opts: PrimeOpts): Promise<void> {
+  if (!VALID_TOOLS.has(opts.tool)) {
+    console.error(
+      `unknown tool: ${opts.tool} (valid: ${[...VALID_TOOLS].join(", ")})`,
+    );
+    process.exitCode = 1;
+    return;
+  }
+
   const cwd = opts.cwd ?? process.cwd();
   const paths = resolveHandoffPaths(cwd);
 
