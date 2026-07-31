@@ -7,6 +7,12 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
+    ignore:
+      # TS majors break the toolchain, not our code: TS6 (#7) and TS7 (#12)
+      # both failed CI (TS7's compiler stops picking up @types/node globals).
+      # Revisit when the ecosystem (@types/node et al.) supports the major.
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
