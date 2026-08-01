@@ -85,9 +85,13 @@ export async function switchTool(opts: SwitchOpts): Promise<void> {
   if (!effectiveNoLaunch) {
     const launched = await launchTool(opts.tool, cwd);
     if (!launched) {
+      // Two common causes: the binary isn't on PATH, or it's a terminal UI that
+      // won't run detached without a TTY. Either way the primer is already on
+      // the clipboard, so opening the tool by hand loses nothing.
       process.stderr.write(
         `⚠  couldn't launch ${opts.tool} automatically.\n` +
-          `   is it installed and on PATH?\n`,
+          `   check it's on PATH — terminal tools may also need to be opened in your own shell.\n` +
+          `   the primer is already on your clipboard: open ${opts.tool} and paste.\n`,
       );
     }
   }
@@ -158,13 +162,31 @@ function clipCommands(): Array<[string, string[]]> {
  * block on it. Returns true if spawn succeeded (not if the tool itself
  * later exits cleanly).
  */
-function launchTool(tool: Tool, cwd: string): Promise<boolean> {
+/**
+ * How long to wait before concluding a launched tool actually stayed up.
+ *
+ * This has to outlast a fast self-exit. Terminal agents (codex, gemini, claude)
+ * are TUIs: spawned detached with stdio "ignore" they have no TTY and bail
+ * immediately with a non-zero code. We previously resolved `true` on a 100ms
+ * timer regardless, so `handoff switch codex` printed "✓ launching codex..."
+ * and told the user to paste into a tool that had already died.
+ */
+export const LAUNCH_SETTLE_MS = 400;
+
+/**
+ * Spawn a detached process and report whether it actually stayed up.
+ *
+ * Resolves false if the binary is missing, or if the child exits non-zero
+ * inside the settle window; true if it's still running when the window closes.
+ * Exported for tests — `launchTool` is just this plus the tool→command map.
+ */
+export function spawnDetached(
+  cmd: string,
+  args: string[],
+  cwd: string,
+  settleMs: number = LAUNCH_SETTLE_MS,
+): Promise<boolean> {
   return new Promise((resolve) => {
-    const [cmd, args] = launchCommand(tool, cwd);
-    if (!cmd) {
-      resolve(false);
-      return;
-    }
     try {
       const child = spawn(cmd, args, {
         cwd,
@@ -174,15 +196,34 @@ function launchTool(tool: Tool, cwd: string): Promise<boolean> {
         // that need shell=true to resolve via PATH.
         shell: platform() === "win32",
       });
-      child.on("error", () => resolve(false));
-      // Unref so the child survives after the parent exits.
+
+      let settled = false;
+      let timer: NodeJS.Timeout;
+      const done = (ok: boolean): void => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(ok);
+      };
+
+      // Binary missing / not executable.
+      child.on("error", () => done(false));
+      // Died before it could settle — a TUI with no TTY, or an immediate crash.
+      child.on("exit", (code) => done(code === 0));
+
+      // Unref so a healthy child survives after we exit.
       child.unref();
-      // Give it a tick to fail fast if the binary is missing.
-      setTimeout(() => resolve(true), 100);
+      timer = setTimeout(() => done(true), settleMs);
     } catch {
       resolve(false);
     }
   });
+}
+
+function launchTool(tool: Tool, cwd: string): Promise<boolean> {
+  const [cmd, args] = launchCommand(tool, cwd);
+  if (!cmd) return Promise.resolve(false);
+  return spawnDetached(cmd, args, cwd);
 }
 
 function launchCommand(tool: Tool, cwd: string): [string, string[]] | [null, null] {

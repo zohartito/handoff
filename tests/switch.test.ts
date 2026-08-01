@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { switchTool } from "../src/commands/switch.js";
+import { switchTool, spawnDetached } from "../src/commands/switch.js";
 
 test("switchTool rejects an unknown tool with exitCode 1 before any side effects", async () => {
   const prevExit = process.exitCode;
@@ -33,4 +33,28 @@ test("switchTool does not treat 'generic' as launchable", async () => {
     console.error = origErr;
     process.exitCode = prevExit;
   }
+});
+
+test("spawnDetached reports failure when the process dies immediately", async () => {
+  // Regression guard: a TUI spawned detached with no TTY exits at once. The
+  // old 100ms optimistic resolve claimed success anyway, so `handoff switch
+  // codex` printed "launching..." and told the user to paste into a tool that
+  // was already gone.
+  const ok = await spawnDetached(process.execPath, ["-e", "process.exit(1)"], process.cwd(), 800);
+  assert.equal(ok, false, "a process that exits non-zero must report failure");
+});
+
+test("spawnDetached reports success when the process stays up", async () => {
+  const ok = await spawnDetached(
+    process.execPath,
+    ["-e", "setTimeout(() => {}, 5000)"],
+    process.cwd(),
+    150,
+  );
+  assert.equal(ok, true, "a surviving process must report success");
+});
+
+test("spawnDetached reports failure when the binary does not exist", async () => {
+  const ok = await spawnDetached("definitely-not-a-real-binary-xyz", [], process.cwd(), 800);
+  assert.equal(ok, false);
 });
