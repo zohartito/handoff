@@ -197,10 +197,10 @@ artifact that is confidently wrong is worse than none.
 
 - [ ] **Auto-capture at session stop.** Make `.handoff/` update itself as a byproduct of working instead of depending on the agent remembering to run `attempt`/`decide`/`correct`. Reuses the marker-parsing engine already in `capture.ts`. Manual commands become the correction path, not the primary path.
 - [ ] **Staleness detection in `doctor`.** Flag an artifact that has drifted from reality: `meta.updatedAt` far behind the last commit, open loops matching things marked shipped, version strings disagreeing with `package.json`, logging that has gone silent.
-- [ ] **Relevance over recency in the primer.** Replace the `lastNEntries(raw, 3)` heuristic with promotion-by-repetition so durable rules survive compaction and one-offs decay. Reuses the theme-clustering already in `patterns.ts`.
-- [ ] **`handoff verify`.** Ask a receiving agent to restate task/constraints/do-nots and diff against the source. Today there is no feedback at all on whether a handoff landed.
+- [x] **Relevance over recency in the primer.** Replace the `lastNEntries(raw, 3)` heuristic with promotion-by-repetition so durable rules survive compaction and one-offs decay. Reuses the theme-clustering already in `patterns.ts`.
+- [x] **`handoff verify`.** Ask a receiving agent to restate task/constraints/do-nots and diff against the source. Today there is no feedback at all on whether a handoff landed.
 - [ ] **Re-inject on PreCompact.** The primer fires once at SessionStart, but drift happens mid-session — exactly when corrections get forgotten.
-- [ ] **Trust boundary on injected content.** `.handoff/` is committed and auto-injected as system context; a cloned repo's artifact is attacker-authorable. Mark ingested/committed content as data rather than instructions.
+- [x] **Trust boundary on injected content.** `.handoff/` is committed and auto-injected as system context; a cloned repo's artifact is attacker-authorable. Mark ingested/committed content as data rather than instructions.
 
 ---
 

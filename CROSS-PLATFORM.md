@@ -96,14 +96,28 @@ Surgical patches applied in this audit:
 Remaining code paths that are CORRECT on paper but have not been executed
 on live hardware.
 
-### macOS (mostly validated — see "Validated" above)
+### macOS (validated — see "Validated" above)
 
-Still outstanding, all in the launch-spawn path (validation runs used
-`--no-launch`):
+**Launch-spawn: validated 2026-08-01, and it found a real bug.** Running
+`handoff switch codex` for real on macOS showed the spawn reporting
+success while codex had already exited with code 1. Terminal agents
+(`codex`, `gemini`, `claude`) are TUIs: spawned detached with
+`stdio: "ignore"` they have no TTY and bail immediately. `launchTool`
+resolved `true` on a fixed 100ms timer without ever observing the child,
+so any instant death read as success — and the user was told to paste
+into a tool that was never running.
 
-- **`handoff switch <tool>` detached launch.** Verify `cursor <cwd>` /
-  `claude` / `codex` / `gemini` actually spawn detached and open when the
-  binaries are on PATH.
+Fixed: the spawn now watches the `exit` event inside a 400ms settle
+window, and reports failure honestly. Consequence worth knowing:
+
+- **GUI targets (`cursor`) launch correctly** — the process persists.
+- **Terminal targets cannot be launched detached from another process.**
+  This is inherent, not a handoff bug. The primer is on the clipboard,
+  so open the tool in your own shell and paste. `--no-launch` is the
+  honest default for those.
+
+Still outstanding on macOS:
+
 - **`handoff ingest --from cursor` with real data.** The adapter scanned
   the correct `~/Library/Application Support/Cursor/` layout, but a parse
   of a real populated `state.vscdb` on macOS hasn't been observed yet.
