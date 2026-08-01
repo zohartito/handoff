@@ -5,3 +5,7 @@ dist-test
 *.tgz
 .DS_Store
 .handoff/files/snapshots
+
+# handoff runtime metadata (regenerated per session; machine-specific paths) — untracked 2026-08-01
+.handoff/environment.md
+.handoff/meta.json
