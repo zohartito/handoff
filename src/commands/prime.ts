@@ -2,6 +2,7 @@ import { resolveHandoffPaths, type HandoffPaths } from "../format/paths.js";
 import { exists, readOrEmpty } from "../util/fs.js";
 import type { Meta } from "../format/types.js";
 import { loadMeta } from "../format/migrate.js";
+import { rankEntries, splitEntries, type RankedEntries } from "./ranking.js";
 
 export type Tool =
   | "claude-code"
@@ -305,39 +306,50 @@ function truncate(s: string, max: number): string {
   return `${s.slice(0, head)}\n\n...[truncated ${s.length - max} chars]...\n\n${s.slice(-tail)}`;
 }
 
-/**
- * Split a markdown doc (`attempts.md`, `corrections.md`) into its top-level
- * entries. Entries are appended by `handoff attempt|correct` using a
- * `## <ISO-timestamp>` header followed by a trailing `---`. We split on
- * `## ` headers when present; fall back to `\n---\n` separators otherwise.
- *
- * Returns entries in original order, with the file's `# Title` + HTML
- * comment banner stripped.
- */
-export function splitEntries(raw: string): string[] {
-  const cleaned = raw.replace(/<!--[\s\S]*?-->/g, "").replace(/^#\s+[^\n]*\n/, "");
-  const trimmed = cleaned.trim();
-  if (!trimmed) return [];
+// Entry splitting lives in ranking.ts (which needs it, and importing the other
+// direction would be circular). Re-exported here because this has been the
+// public home of these helpers since v1.5.
+export { splitEntries, lastNEntries } from "./ranking.js";
 
-  // Primary strategy: split on `## ` H2 headers (what attempt/correct emit).
-  if (/^## /m.test(trimmed)) {
-    const parts = trimmed.split(/\n(?=## )/g);
-    return parts
-      .map((p) => p.replace(/\n---\s*$/g, "").trim())
-      .filter((p) => p.length > 0);
+type RenderRankedOpts = {
+  standingTitle: string;
+  recentTitle: string;
+  file: string;
+  recentN: number;
+  maxStanding: number;
+};
+
+/**
+ * Render one entry log as up to two primer sections: condensed standing rules
+ * (themes that recurred often enough to count as durable), then the recent
+ * tail. Standing rules come first — if the agent reads top-down and runs out of
+ * attention, the durable constraints are what it must not miss.
+ */
+function renderRanked(raw: string, opts: RenderRankedOpts): string[] {
+  const ranked: RankedEntries = rankEntries(raw, {
+    recentN: opts.recentN,
+    maxStanding: opts.maxStanding,
+  });
+  const out: string[] = [];
+
+  if (ranked.standing.length > 0) {
+    const lines = ranked.standing
+      .map((s) => `- ${s.line}  _(seen ${s.count}×)_`)
+      .join("\n");
+    out.push(`## ${opts.standingTitle}\n\n${lines}`);
   }
 
-  // Fallback: entries separated only by `---` dividers.
-  return trimmed
-    .split(/\n---\n/g)
-    .map((p) => p.trim())
-    .filter((p) => p.length > 0);
-}
+  if (ranked.recent.length > 0) {
+    const total = splitEntries(raw).length;
+    const shown = ranked.recent.length + ranked.standing.length;
+    const ptr =
+      total > shown
+        ? `\n\n_(showing latest ${ranked.recent.length} of ${total}; see \`.handoff/${opts.file}\` for the rest)_`
+        : "";
+    out.push(`## ${opts.recentTitle}\n\n${ranked.recent.join("\n\n---\n\n")}${ptr}`);
+  }
 
-/** Return the last N entries from a markdown doc, preserving original order. */
-export function lastNEntries(raw: string, n: number): string[] {
-  const entries = splitEntries(raw);
-  return entries.slice(-n);
+  return out;
 }
 
 /**
@@ -384,35 +396,29 @@ export async function buildCompactPrimer(
     parts.push(`## Open loops\n\n${openLoops}`);
   }
 
-  // 3. Latest 3 corrections.
+  // 3. Corrections — recurring themes promoted above the recent tail.
   const correctionsRaw = await readOrEmpty(paths.corrections);
-  const recentCorrections = lastNEntries(correctionsRaw, 3);
-  if (recentCorrections.length > 0) {
-    const total = splitEntries(correctionsRaw).length;
-    const omitted = total - recentCorrections.length;
-    const ptr =
-      omitted > 0
-        ? `\n\n_(showing latest ${recentCorrections.length} of ${total}; see \`.handoff/corrections.md\` for the rest)_`
-        : "";
-    parts.push(
-      `## Latest corrections\n\n${recentCorrections.join("\n\n---\n\n")}${ptr}`,
-    );
-  }
+  parts.push(
+    ...renderRanked(correctionsRaw, {
+      standingTitle: "Standing rules (repeated corrections — treat as hard constraints)",
+      recentTitle: "Latest corrections",
+      file: "corrections.md",
+      recentN: 3,
+      maxStanding: 5,
+    }),
+  );
 
-  // 4. Latest 3 failed attempts.
+  // 4. Failed attempts — same treatment.
   const attemptsRaw = await readOrEmpty(paths.attempts);
-  const recentAttempts = lastNEntries(attemptsRaw, 3);
-  if (recentAttempts.length > 0) {
-    const total = splitEntries(attemptsRaw).length;
-    const omitted = total - recentAttempts.length;
-    const ptr =
-      omitted > 0
-        ? `\n\n_(showing latest ${recentAttempts.length} of ${total}; see \`.handoff/attempts.md\` for the rest)_`
-        : "";
-    parts.push(
-      `## Latest failed attempts (do not repeat)\n\n${recentAttempts.join("\n\n---\n\n")}${ptr}`,
-    );
-  }
+  parts.push(
+    ...renderRanked(attemptsRaw, {
+      standingTitle: "Recurring failure modes (do not retry)",
+      recentTitle: "Latest failed attempts (do not repeat)",
+      file: "attempts.md",
+      recentN: 3,
+      maxStanding: 5,
+    }),
+  );
 
   // 5. Environment — squeeze to one line.
   const envLine = extractEnvOneLine(await readOrEmpty(paths.environment));
@@ -484,35 +490,29 @@ export async function buildSubagentPrimer(
     parts.push(`## Task (parent's goal)\n\n${taskRaw}`);
   }
 
-  // Latest 3 corrections — highest-signal "don't repeat this" input.
+  // Corrections — highest-signal "don't repeat this" input. Tighter caps than
+  // the compact primer: a subagent is focused on one subtask and has ~1.5k.
   const correctionsRaw = await readOrEmpty(paths.corrections);
-  const recentCorrections = lastNEntries(correctionsRaw, 3);
-  if (recentCorrections.length > 0) {
-    const total = splitEntries(correctionsRaw).length;
-    const omitted = total - recentCorrections.length;
-    const ptr =
-      omitted > 0
-        ? `\n\n_(showing latest ${recentCorrections.length} of ${total})_`
-        : "";
-    parts.push(
-      `## Latest corrections\n\n${recentCorrections.join("\n\n---\n\n")}${ptr}`,
-    );
-  }
+  parts.push(
+    ...renderRanked(correctionsRaw, {
+      standingTitle: "Standing rules (repeated corrections — hard constraints)",
+      recentTitle: "Latest corrections",
+      file: "corrections.md",
+      recentN: 2,
+      maxStanding: 2,
+    }),
+  );
 
-  // Latest 3 failed attempts — same rationale.
   const attemptsRaw = await readOrEmpty(paths.attempts);
-  const recentAttempts = lastNEntries(attemptsRaw, 3);
-  if (recentAttempts.length > 0) {
-    const total = splitEntries(attemptsRaw).length;
-    const omitted = total - recentAttempts.length;
-    const ptr =
-      omitted > 0
-        ? `\n\n_(showing latest ${recentAttempts.length} of ${total})_`
-        : "";
-    parts.push(
-      `## Latest failed attempts (do not repeat)\n\n${recentAttempts.join("\n\n---\n\n")}${ptr}`,
-    );
-  }
+  parts.push(
+    ...renderRanked(attemptsRaw, {
+      standingTitle: "Recurring failure modes (do not retry)",
+      recentTitle: "Latest failed attempts (do not repeat)",
+      file: "attempts.md",
+      recentN: 2,
+      maxStanding: 2,
+    }),
+  );
 
   return parts.join("\n\n") + "\n";
 }
