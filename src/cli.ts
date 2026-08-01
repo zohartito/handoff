@@ -20,6 +20,7 @@ import { doctor } from "./commands/doctor.js";
 import { obsidian } from "./commands/obsidian.js";
 import { search } from "./commands/search.js";
 import { patterns } from "./commands/patterns.js";
+import { verify } from "./commands/verify.js";
 
 const program = new Command();
 
@@ -278,6 +279,19 @@ program
     await patterns({
       top: Number.isFinite(opts.top) ? opts.top : undefined,
       roots: opts.root && opts.root.length > 0 ? opts.root : undefined,
+    });
+  });
+
+program
+  .command("verify")
+  .description("check whether a receiving agent actually picked up the handoff")
+  .option("--check", "score a restatement instead of printing the prompt")
+  .option("--file <path>", "read the restatement from a file (implies --check)")
+  .option("--stdin", "read the restatement from stdin (implies --check)")
+  .action(async (opts) => {
+    await verify({
+      check: !!(opts.check || opts.file || opts.stdin),
+      file: opts.file,
     });
   });
 
