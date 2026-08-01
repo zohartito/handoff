@@ -181,9 +181,32 @@ Dogfooded into existence: a Claude Desktop conversation with no on-disk transcri
 
 ---
 
+## v7.5 — repairs (in progress)
+
+**Not gated.** The gate below applies to *new surface*. Repairs to the shipped
+v0.1–v0.7 surface ship freely: the tool's own data says the existing design
+doesn't work as intended, and gating fixes behind stranger adoption means the
+most important improvements wait on the least controllable signal.
+
+The evidence that motivated this section: `.handoff/attempts.md` in this repo
+logged 14 entries across two days (2026-04-16/17), then nothing for 3.5 months
+across 13 commits; `corrections.md` has 2 entries ever. Meanwhile the artifact
+itself sat frozen at the 0.4.0 era while the project shipped 0.7.1, still
+listing "publish to npm" as an open loop, and nothing flagged it. A handoff
+artifact that is confidently wrong is worse than none.
+
+- [ ] **Auto-capture at session stop.** Make `.handoff/` update itself as a byproduct of working instead of depending on the agent remembering to run `attempt`/`decide`/`correct`. Reuses the marker-parsing engine already in `capture.ts`. Manual commands become the correction path, not the primary path.
+- [ ] **Staleness detection in `doctor`.** Flag an artifact that has drifted from reality: `meta.updatedAt` far behind the last commit, open loops matching things marked shipped, version strings disagreeing with `package.json`, logging that has gone silent.
+- [ ] **Relevance over recency in the primer.** Replace the `lastNEntries(raw, 3)` heuristic with promotion-by-repetition so durable rules survive compaction and one-offs decay. Reuses the theme-clustering already in `patterns.ts`.
+- [ ] **`handoff verify`.** Ask a receiving agent to restate task/constraints/do-nots and diff against the source. Today there is no feedback at all on whether a handoff landed.
+- [ ] **Re-inject on PreCompact.** The primer fires once at SessionStart, but drift happens mid-session — exactly when corrections get forgotten.
+- [ ] **Trust boundary on injected content.** `.handoff/` is committed and auto-injected as system context; a cloned repo's artifact is attacker-authorable. Mark ingested/committed content as data rather than instructions.
+
+---
+
 ## Future (speculative)
 
-**Gate:** do not build any of the below until at least one of — npm downloads >100/week, 3+ GitHub issues from non-Zohar accounts, or an unsolicited community shoutout. Until then, the v0.1–v0.7 surface is the product; adding more is scope creep in search of a user.
+**Gate:** do not build any *new surface* below until at least one of — npm downloads >100/week, 3+ GitHub issues from non-Zohar accounts, or an unsolicited community shoutout. Until then, the v0.1–v0.7 surface is the product; adding more is scope creep in search of a user. (Repairs to that existing surface are not gated — see v7.5 above.)
 
 - **v8 — auto-rule promotion.** When the same correction theme appears 3+ times across a project's `.handoff/corrections.md`, offer to promote it into the tool-native rules file (`CLAUDE.md`, `.cursorrules`, `AGENTS.md`, `GEMINI.md`) so the next agent inherits it as a hard instruction instead of a soft primer hint
 - **v9 — adapter expansion.** Ingest for Aider, Continue.dev, Zed AI, Cline, Roo Code, Windsurf. Mechanical work; each adds ~200 LoC + tests. Only ship the adapters that match real users
