@@ -4,10 +4,24 @@ import { exists } from "../util/fs.js";
 import { buildPrimer } from "./prime.js";
 import { save } from "./save.js";
 import { attempt } from "./attempt.js";
+import { autoCapture } from "./auto-capture.js";
 
-export type HookEvent = "session-start" | "stop" | "rate-limit";
+export type HookEvent = "session-start" | "stop" | "pre-compact" | "rate-limit";
 
-type HookOpts = { event: HookEvent; cwd?: string };
+/**
+ * The JSON payload Claude Code delivers on stdin to a hook command. For Stop /
+ * PreCompact the interesting fields are `transcript_path` (the full session
+ * JSONL) and `stop_hook_active` (re-entrancy guard).
+ */
+export type HookPayload = {
+  session_id?: string;
+  transcript_path?: string;
+  cwd?: string;
+  hook_event_name?: string;
+  stop_hook_active?: boolean;
+};
+
+type HookOpts = { event: HookEvent; cwd?: string; payload?: HookPayload };
 
 /**
  * Subcommand: `handoff hook <event>`
@@ -17,7 +31,7 @@ type HookOpts = { event: HookEvent; cwd?: string };
  * must not print anything we don't want Claude to see.
  */
 export async function hook(opts: HookOpts): Promise<void> {
-  const cwd = opts.cwd ?? process.cwd();
+  const cwd = opts.cwd ?? opts.payload?.cwd ?? process.cwd();
   const paths = resolveHandoffPaths(cwd);
 
   if (!(await exists(paths.dir))) {
@@ -46,6 +60,23 @@ export async function hook(opts: HookOpts): Promise<void> {
       await save({ cwd });
     } finally {
       console.log = originalLog;
+    }
+    // Auto-capture failed attempts + corrections from the transcript. This must
+    // NEVER break the session: swallow everything and exit clean.
+    try {
+      await autoCapture({ cwd, paths, payload: opts.payload });
+    } catch {
+      /* auto-capture is best-effort; a Stop hook must always succeed */
+    }
+    return;
+  }
+
+  if (opts.event === "pre-compact") {
+    // Same curated auto-capture as Stop, before the transcript gets compacted.
+    try {
+      await autoCapture({ cwd, paths, payload: opts.payload });
+    } catch {
+      /* best-effort; never break compaction */
     }
     return;
   }

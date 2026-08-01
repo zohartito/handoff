@@ -462,9 +462,69 @@ export type AssistantTurn = { ts: string; text: string; toolUses: ToolUseRef[] }
 export type ToolUseRef = { name: string; brief: string };
 export type ErrorHit = { ts: string; tool: string; error: string };
 
-export async function summarizeSession(file: string): Promise<string> {
+/** A single Bash tool_use paired with whether its tool_result was an error. */
+export type BashCall = {
+  ts: string;
+  command: string;
+  isError: boolean;
+  errorText: string;
+};
+
+/** A user string-message plus a one-line summary of the assistant turn before it. */
+export type UserTurn = {
+  ts: string;
+  text: string;
+  /** 0-based position among the string user messages in the parsed window. */
+  index: number;
+  /** One-line summary of the most recent assistant turn, or null. */
+  precedingAssistant: string | null;
+};
+
+/**
+ * Structured result of walking a Claude Code session JSONL. Consumed by
+ * `renderMarkdown` (for ingest) and by the auto-capture detectors. Parsing and
+ * rendering are split so auto-capture can reuse the parse without the markdown.
+ */
+export type ParsedSession = {
+  sessionId: string | null;
+  file: string;
+  cwd: string | null;
+  firstTs: string | null;
+  lastTs: string | null;
+  userMsgs: UserMsg[];
+  assistantTurns: AssistantTurn[];
+  errors: ErrorHit[];
+  toolCounts: Record<string, number>;
+  filesTouched: Set<string>;
+  bashCommands: string[];
+  /** Bash tool_uses with their result status, in chronological order. */
+  bashCalls: BashCall[];
+  /** String user messages with their preceding-assistant context. */
+  userTurns: UserTurn[];
+  /** Line index the parse window started at (0 = session beginning). */
+  startLine: number;
+  /** Line index just past the last line consumed — the next cursor. */
+  linesProcessed: number;
+};
+
+/** Max lines scanned in a single parse pass (auto-capture safety cap). */
+const MAX_LINES = 20000;
+
+/**
+ * Parse a Claude Code session JSONL into a `ParsedSession`.
+ *
+ * `fromLine` skips lines before the cursor (used by auto-capture dedup). Empty
+ * and malformed lines are skipped without throwing. Line indexing is stable
+ * (no pre-filtering) so cursors survive across runs.
+ */
+export async function parseSessionEvents(
+  file: string,
+  fromLine = 0,
+): Promise<ParsedSession> {
   const raw = await readOrEmpty(file);
-  const lines = raw.split("\n").filter(Boolean);
+  const allLines = raw.split("\n");
+  const start = Math.max(0, fromLine);
+  const end = Math.min(allLines.length, start + MAX_LINES);
 
   const userMsgs: UserMsg[] = [];
   const assistantTurns: AssistantTurn[] = [];
@@ -472,6 +532,10 @@ export async function summarizeSession(file: string): Promise<string> {
   const toolCounts: Record<string, number> = {};
   const filesTouched = new Set<string>();
   const bashCommands: string[] = [];
+  const bashCalls: BashCall[] = [];
+  const userTurns: UserTurn[] = [];
+  let userIndex = 0;
+  let lastAssistant: AssistantTurn | null = null;
   let firstTs: string | null = null;
   let lastTs: string | null = null;
   let cwd: string | null = null;
@@ -479,8 +543,12 @@ export async function summarizeSession(file: string): Promise<string> {
 
   // map tool_use_id → tool name, to resolve tool_result errors back to the tool
   const toolUseById = new Map<string, string>();
+  // map tool_use_id → the Bash call record, to backfill result status
+  const bashCallById = new Map<string, BashCall>();
 
-  for (const line of lines) {
+  for (let i = start; i < end; i++) {
+    const line = allLines[i];
+    if (!line) continue;
     let e: AnyEvent;
     try {
       e = JSON.parse(line);
@@ -498,12 +566,25 @@ export async function summarizeSession(file: string): Promise<string> {
       const content = e.message?.content;
       if (typeof content === "string") {
         userMsgs.push({ ts: e.timestamp, text: content });
+        userTurns.push({
+          ts: e.timestamp,
+          text: content,
+          index: userIndex++,
+          precedingAssistant: lastAssistant
+            ? summarizeAssistantTurn(lastAssistant)
+            : null,
+        });
       } else if (Array.isArray(content)) {
         for (const part of content) {
           if (part.type === "tool_result" && part.is_error) {
             const toolName = toolUseById.get(part.tool_use_id) ?? "unknown";
             const errText = stringifyContent(part.content).slice(0, 300);
             errors.push({ ts: e.timestamp, tool: toolName, error: errText });
+            const bashCall = bashCallById.get(part.tool_use_id);
+            if (bashCall) {
+              bashCall.isError = true;
+              bashCall.errorText = errText;
+            }
           }
         }
       }
@@ -520,15 +601,21 @@ export async function summarizeSession(file: string): Promise<string> {
           toolCounts[name] = (toolCounts[name] ?? 0) + 1;
           turn.toolUses.push({ name, brief: briefToolInput(name, part.input) });
           collectToolMeta(name, part.input, filesTouched, bashCommands);
+          if (name === "Bash" && part.input && typeof part.input === "object") {
+            const command = String(part.input.command ?? "");
+            const call: BashCall = { ts: e.timestamp, command, isError: false, errorText: "" };
+            bashCalls.push(call);
+            bashCallById.set(part.id, call);
+          }
         }
         // 'thinking' parts are intentionally skipped — internal only
       }
       assistantTurns.push(turn);
+      lastAssistant = turn;
     }
   }
 
-  return renderMarkdown({
-    sourceLabel: "Claude Code",
+  return {
     sessionId,
     file,
     cwd,
@@ -540,6 +627,42 @@ export async function summarizeSession(file: string): Promise<string> {
     toolCounts,
     filesTouched,
     bashCommands,
+    bashCalls,
+    userTurns,
+    startLine: start,
+    linesProcessed: end,
+  };
+}
+
+/** One-line summary of an assistant turn, for a correction's `agent did:`. */
+export function summarizeAssistantTurn(turn: AssistantTurn): string {
+  const firstText = turn.text
+    .split("\n")
+    .map((l) => l.trim())
+    .find((l) => l.length > 0);
+  if (firstText) return firstText.slice(0, 200);
+  if (turn.toolUses.length > 0) {
+    const t = turn.toolUses[0];
+    return `${t.name}${t.brief ? " " + t.brief : ""}`.slice(0, 200);
+  }
+  return "(no assistant output)";
+}
+
+export async function summarizeSession(file: string): Promise<string> {
+  const parsed = await parseSessionEvents(file);
+  return renderMarkdown({
+    sourceLabel: "Claude Code",
+    sessionId: parsed.sessionId,
+    file: parsed.file,
+    cwd: parsed.cwd,
+    firstTs: parsed.firstTs,
+    lastTs: parsed.lastTs,
+    userMsgs: parsed.userMsgs,
+    assistantTurns: parsed.assistantTurns,
+    errors: parsed.errors,
+    toolCounts: parsed.toolCounts,
+    filesTouched: parsed.filesTouched,
+    bashCommands: parsed.bashCommands,
   });
 }
 

@@ -104,9 +104,9 @@ Emits a tool-specific primer prompt to stdout. Pipe it, redirect it, or read it.
 
 Prints the exact integration instructions for the named tool — the `.claude/settings.json` snippet for Claude Code, the Claude Desktop Project setup recipe (filesystem MCP + attached `.handoff/` files), or the `.cursorrules` additions for Cursor. Copy into place manually; `handoff` does not edit your tool configs.
 
-### `handoff hook <session-start|stop|rate-limit>`
+### `handoff hook <session-start|stop|pre-compact|rate-limit>`
 
-Internal. Called by the Claude Code hook system. Do not invoke directly unless you're debugging the hook wiring.
+Internal. Called by the Claude Code hook system. Do not invoke directly unless you're debugging the hook wiring. `stop` and `pre-compact` read Claude Code's JSON payload on stdin (including `transcript_path`) and, on top of refreshing the environment snapshot, **auto-capture** failed build/test attempts and user corrections straight from the session transcript — so `attempts.md` and `corrections.md` stay populated even when the agent forgets to log by hand. Auto-capture is best-effort and can never break a session; it dedupes via a per-session cursor plus content hashes stored in `.handoff/.capture-state.json`, tags entries with `**source:** auto`, and never writes decisions or a transcript.
 
 ### `handoff ingest --from <claude-code|cursor|codex|gemini|paste> [--session <id>] [--list] [--out <path>] [--project <path>]`
 
@@ -203,7 +203,7 @@ A `.handoff/` directory looks like this:
 
 ## Integration recipe: Claude Code
 
-Claude Code has the deepest integration — three hooks in `.claude/settings.json`:
+Claude Code has the deepest integration — hooks in `.claude/settings.json` (the `PreCompact` block is optional):
 
 ```json
 {
@@ -224,6 +224,14 @@ Claude Code has the deepest integration — three hooks in `.claude/settings.jso
         ]
       }
     ],
+    "PreCompact": [
+      {
+        "matcher": "",
+        "hooks": [
+          { "type": "command", "command": "handoff hook pre-compact" }
+        ]
+      }
+    ],
     "StopFailure": [
       {
         "matcher": "rate_limit",
@@ -237,7 +245,8 @@ Claude Code has the deepest integration — three hooks in `.claude/settings.jso
 ```
 
 - `SessionStart` injects the primer automatically — no paste required.
-- `Stop` refreshes `environment.md` so the next tool sees the latest state.
+- `Stop` refreshes `environment.md` **and** auto-captures failed build/test attempts + user corrections from the session transcript, so `attempts.md` / `corrections.md` fill themselves in even when the agent forgets to log by hand. Auto-captured entries are tagged `**source:** auto` and deduped via `.handoff/.capture-state.json`.
+- `PreCompact` (optional) runs the same auto-capture before Claude Code compacts the transcript, so nothing is lost to compaction.
 - `StopFailure` with the `rate_limit` matcher logs the event and prints a swap-tool nudge.
 
 **Important:** `StopFailure` is reactive. Claude Code does not currently expose a pre-rate-limit API, so `handoff` cannot warn you before you hit the wall — only after. This is tracked in `ROADMAP.md` under Research.

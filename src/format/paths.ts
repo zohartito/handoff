@@ -19,6 +19,7 @@ export type HandoffPaths = {
   transcript: string;
   filesManifest: string;
   meta: string;
+  captureState: string;
 };
 
 export function resolveHandoffPaths(cwd: string = process.cwd()): HandoffPaths {
@@ -43,5 +44,6 @@ export function resolveHandoffPaths(cwd: string = process.cwd()): HandoffPaths {
     transcript: resolve(dir, "transcript.jsonl"),
     filesManifest: resolve(dir, "files.json"),
     meta: resolve(dir, "meta.json"),
+    captureState: resolve(dir, ".capture-state.json"),
   };
 }
