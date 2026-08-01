@@ -25,38 +25,41 @@ Human notes:
 
 ## Auto
 
-_refreshed: 2026-04-17T04:34:48.987Z_
-- os: darwin 25.3.0 (arm64)
-- user: zohartito
-- node: v23.7.0
-- cwd: `/Users/zohartito/Documents/handoff`
+_refreshed: 2026-04-26T23:20:38.891Z_
+- os: win32 10.0.26200 (x64)
+- user: zohar_4ta16fp
+- node: v24.14.0
+- cwd: `C:\Users\zohar_4ta16fp\projects\handoff`
 - git branch: `main`
 
 ### git status
 
 ```
-M .handoff/attempts.md
- M .handoff/environment.md
+M .handoff/environment.md
  M .handoff/meta.json
+ M README.md
+?? .claude/worktrees/
+?? .handoff/ingested-context.md
+?? .handoff/transcript.md
 ```
 
 ### recent commits
 
 ```
-90c28c2 chore(v1.6): hand off mac/linux validation to MacBook via .handoff/task.md
-63cdfd8 feat(v4): permanent memory - obsidian sync, cross-project search + patterns (0.4.0)
-3ea546a feat(v2.5/v3): agent-initiated handoffs + concurrency safety (0.3.0)
-1f1f0f0 chore(v1.6): suppress 'Source tool: unknown', refresh own .handoff/, add v1.6 roadmap
-ca0a849 feat(v1.5): ingest --all, compact primer, schema migration, cross-platform
+8cc92b8 Add Obsidian vault handoff prompt template (START, END, RUSH/token limit)
+6406d2a fix(ingest): wire paste --file/--stdin/--clipboard CLI flags (v0.7.1)
+1ce369e chore(release): v0.7.0 - Claude Desktop + paste ingest + capture command
+1f4855f merge feat/v0.7-capture-command: AI-runnable end-of-session dump
+5e38b60 merge feat/v0.7-desktop-primer: Claude Desktop as first-class target
 ```
 
 ### diff stat
 
 ```
-.handoff/attempts.md    | 54 +++++++++++++++++++++++++++++++++++++++++++++++++
- .handoff/environment.md | 25 +++++++++--------------
- .handoff/meta.json      |  2 +-
- 3 files changed, 64 insertions(+), 17 deletions(-)
+.handoff/environment.md |  35 ++---
+ .handoff/meta.json      |   2 +-
+ README.md               | 357 +++++++++++++++++++++++-------------------------
+ 3 files changed, 190 insertions(+), 204 deletions(-)
 ```
 
 ## Human notes

@@ -1,311 +1,294 @@
 # handoff
 
-Portable session-state CLI for AI coding tools. When you switch mid-task between Claude Code, Cursor, Codex, or Gemini (usually because you hit a rate limit), `handoff` gives the next tool the same context the last tool had: what was tried, what failed, what was decided, what you corrected.
+**When you switch AI coding tools mid-task, the next tool doesn't know what the last one was doing. `handoff` fixes that.**
 
-No cloud. No database. No servers. Just a `.handoff/` folder of markdown and JSON files in your project root.
+You're deep in a task in Claude Code. You hit the 5-hour rate limit. You open Cursor. Ten minutes of re-pasting context later, the new agent repeats a mistake the old one already made an hour ago.
 
-## The problem
+`handoff` keeps a small `.handoff/` folder in your project — plain markdown and JSON, no cloud, no database — and every tool reads and writes it as you work. Switch tools and the next one picks up exactly where the last left off.
 
-You're deep in a task. Claude Code hits its 5-hour limit. You open Cursor. You now spend 10 minutes re-explaining the task, the constraints, what you already tried, what the agent got wrong last time. Half of it you forget to mention. The new tool repeats the same mistakes.
+```
+  Claude Code    Claude Desktop    Cursor    Codex    Gemini
+       \_____________  |  ___________|_________/______/
+                     \_|_/
+                 .handoff/
+             (shared project state)
+```
 
-## What handoff does
+Works with: Claude Code, Claude Desktop, Cursor, Codex, Gemini. Tested daily on Windows; Mac/Linux paths wired but use at your own risk.
 
-`handoff init` drops a `.handoff/` folder in your project. Your AI tool reads and writes structured files there as it works (task, progress, decisions, attempts, corrections, environment, references). When you switch tools, the next one reads the same folder and picks up where the last left off.
+---
 
-For Claude Code this is zero-friction (hooks auto-inject on session start, auto-refresh on stop). For Cursor/Codex/Gemini you run `handoff switch <tool>` — it saves state, builds a primer, copies it to your clipboard, and launches the target tool in the current directory. Paste and go.
+## Install
 
-## Quick start
+```bash
+npm install -g @zohartito/handoff
+```
+
+Requires Node 22.5+ (the Cursor adapter uses the built-in `node:sqlite`, stabilised in 22.5). No runtime deps beyond `commander`.
+
+Verify:
+
+```bash
+handoff --version   # 0.7.1
+```
+
+---
+
+## 30-second quickstart
 
 ```bash
 cd my-project
 handoff init
 ```
 
-Work normally in Claude Code — it hydrates from `.handoff/` on session start and logs as it goes.
-
-Hit a rate limit? Switch tools:
+That's it — `.handoff/` is scaffolded. Now just work. When you need to switch tools:
 
 ```bash
 handoff switch cursor
 ```
 
-State is saved, primer is on your clipboard, Cursor is launching. Paste the primer as your first message.
+State is saved, a primer is on your clipboard, Cursor is launching. Paste the primer as your first message.
 
-## Installation
+---
 
-Requires Node 22.5+ (the Cursor ingest adapter uses the built-in `node:sqlite` module, which stabilised in 22.5). No other runtime dependencies beyond `commander`.
+## Tool-by-tool setup
 
-```bash
-npm install -g @zohartito/handoff
-```
+One-time setup per tool. After this, you never think about it again.
 
-Or install from source as a fallback:
+### Claude Code (zero-friction — hooks auto-inject)
 
 ```bash
-git clone https://github.com/zohartito/handoff.git
-cd handoff
-npm install
-npm run build
-npm link
+handoff install --tool claude-code
 ```
 
-## Commands
+Prints the 3-hook snippet to paste into `~/.claude/settings.json`. Once in place:
 
-Run `handoff <command> --help` for full options on any command.
+- `SessionStart` automatically primes every new session with `.handoff/` contents
+- `Stop` auto-refreshes `environment.md`
+- `StopFailure` (with the `rate_limit` matcher) logs rate-limit hits
 
-### `handoff init [--from <tool>] [--force]`
+You don't run any `handoff` commands by hand for Claude Code — the agent does.
 
-Scaffolds `.handoff/` in the current directory. `--from <tool>` seeds identity/environment from a known tool context. `--force` overwrites an existing folder.
+### Claude Desktop (paste-based — no on-disk transcript)
 
-### `handoff status`
-
-Shows which files in `.handoff/` are filled vs still template. Filled files show `●`, template files show `○`. Quick signal for whether the current session has captured anything meaningful yet.
-
-### `handoff save`
-
-Refreshes the environment snapshot in `environment.md` — os, user, node version, cwd, git branch and head. Called automatically by the Claude Code Stop hook; run manually before a cross-tool switch if you skipped the hook.
-
-### `handoff attempt <what> [--error <trace>] [--fix <desc>] [--summary <text>]`
-
-Logs a failed approach to `attempts.md` and `transcript.jsonl`. Use this the moment you know an approach didn't pan out — the next tool needs to know not to retry it.
+Claude Desktop stores conversations in the cloud, so there's no file for `handoff` to read. Instead:
 
 ```bash
-handoff attempt "run migration with --force" \
-  --error "connection pool exhausted at step 3" \
-  --fix "batch in groups of 100" \
-  --summary "bulk write hits pg pool limit"
+handoff install --tool claude-desktop
 ```
 
-### `handoff decide <choice> [--because <reason>] [--alt <alternatives...>]`
+This prints a recipe for Desktop's Projects feature: attach `.handoff/` via filesystem MCP, paste a primer into Project instructions. At session end, ask Desktop-Claude to dump the conversation into `.handoff/transcript.md` and update the log files.
 
-Logs a design decision to `decisions.md`. Capture the decision, the reasoning, and the alternatives you rejected so the next session doesn't re-litigate it.
+If the conversation already happened and you just want to capture it:
 
 ```bash
-handoff decide "use zod for request validation" \
-  --because "already a dep via trpc, team knows it" \
-  --alt "joi" "yup" "hand-rolled"
+# copy the conversation to clipboard in Desktop, then:
+handoff ingest --from paste --clipboard
 ```
 
-### `handoff correct <action> --user-said <text> [--lesson <text>]`
+The summary lands in `.handoff/ingested-context.md` and the raw transcript in `.handoff/transcript.md`.
 
-Logs a user correction to `corrections.md`. When the user pushes back on an approach, log it verbatim — the lesson travels with the project.
+### Cursor
 
 ```bash
-handoff correct "was about to add a new ORM layer" \
-  --user-said "no new deps, use the raw pg client that's already wired up" \
-  --lesson "this project values minimal deps over abstraction"
+handoff install --tool cursor
 ```
 
-### `handoff prime [--tool <tool>] [--max-chars <n>]`
-
-Emits a tool-specific primer prompt to stdout. Pipe it, redirect it, or read it. `--tool` accepts `claude-code`, `claude-desktop`, `cursor`, `codex`, `gemini`, or `generic`. `--max-chars` caps the output length for tools with tight context budgets.
-
-### `handoff install --tool <claude-code|claude-desktop|cursor>`
-
-Prints the exact integration instructions for the named tool — the `.claude/settings.json` snippet for Claude Code, the Claude Desktop Project setup recipe (filesystem MCP + attached `.handoff/` files), or the `.cursorrules` additions for Cursor. Copy into place manually; `handoff` does not edit your tool configs.
-
-### `handoff hook <session-start|stop|rate-limit>`
-
-Internal. Called by the Claude Code hook system. Do not invoke directly unless you're debugging the hook wiring.
-
-### `handoff ingest --from <claude-code|cursor|codex|gemini|paste> [--session <id>] [--list] [--out <path>] [--project <path>]`
-
-Reads past AI agent sessions and produces a structured markdown summary. Useful when you want to seed `.handoff/` from work you've already done in another tool.
-
-- `--from claude-code` reads Claude Code JSONL transcripts directly.
-- `--from cursor` reads Cursor's `state.vscdb` SQLite file (via built-in `node:sqlite`).
-- `--from codex` reads Codex rollout JSONL files from `~/.codex/sessions/...`.
-- `--from gemini` reads Gemini saved chats / checkpoints from `~/.gemini/tmp/...`.
-- `--from paste` reads a transcript you've already copied out of a tool that has no on-disk logs (Claude Desktop, ChatGPT web, etc.). Exactly one of `--file <path>`, `--stdin`, or `--clipboard` must be supplied. The raw paste lands in `.handoff/transcript.md`; the rendered summary goes to `.handoff/ingested-context.md`.
-- `--list` enumerates available sessions instead of ingesting.
-- `--session <id>` picks a specific session; omit to use the most recent.
-- `--out <path>` writes the summary to a file; omit for stdout.
-- `--project <path>` scopes the search to a specific project root.
-
-### `handoff capture [--from stdin|file] [--file <path>] [--mode full|summary] [--task <file>] [--decisions <file>] [--corrections <file>]`
-
-AI-runnable end-of-session dump. An outgoing agent feeds its own transcript through `capture` right before the session closes, so the next agent sees the full history plus extracted markers.
-
-- Appends the transcript to `.handoff/transcript.md` with a `## Session <ISO-date>` separator (safe to run twice).
-- `--mode full` (default) additionally scans the transcript for `DECISION:` / `TODO:` / `CORRECTION:` / `TASK:` marker lines and appends each to the matching `.handoff/*.md` file. The AI structures its own output with markers; `capture` routes them.
-- `--mode summary` only writes the transcript, skips extraction.
-- `--task` / `--decisions` / `--corrections` override the default targets (useful in tests or for writing to alternate files).
+Prints the `.cursorrules` block to add. Whenever you need state from a previous tool:
 
 ```bash
-# AI pipes its own final message through capture
-echo "Session summary...
-DECISION: switch to NURBS perforation via AddInnerProfile
-CORRECTION: user said perforations go on folds too" | handoff capture --from stdin --mode full
+handoff switch cursor
 ```
 
-If the current project already has a `.handoff/` folder and you omit `--out`,
-the summary is also persisted to `.handoff/ingested-context.md`. Future
-`handoff prime` / `handoff switch` calls automatically surface that imported
-context, so the next tool sees the past transcript even before you've manually
-folded it into `task.md`, `progress.md`, etc.
+Saves state, builds a primer, copies to clipboard, launches Cursor. Paste and go.
 
-### `handoff switch <tool> [--no-save] [--no-launch]`
+### Codex / Gemini
 
-One-shot handoff. Saves current state, builds a tool-specific primer, copies it to the clipboard, and launches the target tool in the current working directory.
+No install step required (no equivalent of Claude Code hooks yet). Just:
 
-- For `claude-code`, the clipboard step is skipped — the SessionStart hook injects the primer automatically.
-- `--no-save` skips the env refresh.
-- `--no-launch` copies the primer to the clipboard but does not spawn the tool. Useful if the target tool is already open.
+```bash
+handoff switch codex     # or: handoff switch gemini
+```
 
-Supported targets: `claude-code`, `claude-desktop`, `cursor`, `codex`, `gemini`, `generic`. For `claude-desktop` the launch step is always skipped (GUI app, no reliable CLI shim) — primer is copied, you open Claude Desktop and paste into the relevant Project yourself.
+Same pattern: save, prime, copy, launch.
 
-### `handoff obsidian sync [--vault <path>] [--project <path>]`
+---
 
-Writes the current project's `.handoff/` content into an Obsidian vault so your session state survives as permanent cross-project memory. Produces:
+## Daily flow — what to log as you work
 
-- `Daily/YYYY-MM-DD.md` — appends one `## handoff: <project> — HH:MM` block per run (idempotent within the same minute).
-- `Decisions/YYYY-MM-DD_<project>_<slug>.md` — one note per decision entry; updates in place if the entry body changes.
-- `Rules/<project>__<slug>.md` — one note per correction (append-only rulebook).
+The `.handoff/` folder is only useful if it's kept current. Four commands cover ~everything:
 
-Vault resolution: `--vault` wins over `HANDOFF_OBSIDIAN_VAULT`. No vault configured → error.
+```bash
+handoff decide "use zod for validation" \
+  --because "already a dep via trpc"
 
-### `handoff search <query> [--limit <n>] [--root <path>...] [--case-sensitive]`
+handoff attempt "batch migration at 1000/sec" \
+  --error "connection pool exhausted" \
+  --fix "batch at 100"
 
-Greps every `.handoff/` folder on the machine for `<query>` and returns ranked results grouped by project. Default roots: `$HOME` plus common code dirs (`~/code`, `~/repos`, `~/dev`, `~/projects`, `~/src`, `~/work`, `~/Documents/GitHub`). Override with `--root` (repeatable) or `HANDOFF_SEARCH_ROOTS` (colon/semicolon separated). Ranking: exact-word > project recency > file order.
+handoff correct "was adding new ORM" \
+  --user-said "no new deps — use the raw pg client"
 
-### `handoff patterns [--top <n>] [--root <path>...]`
+handoff save   # refresh git/env snapshot
+```
 
-Aggregates correction themes, failure modes, and tool usage across every `.handoff/` on the machine. Uses the same discovery roots as `search`. Tokenizes corrections/attempts (unigrams + bigrams, stopwords filtered), tags each theme with the project languages it appeared in, and reports tool-usage counts. Useful for spotting recurring mistakes you keep correcting LLMs about.
+Put a reminder in your `CLAUDE.md` / `.cursorrules` (the `install` command output already includes this snippet) and the agent will log on its own.
 
-## File format
+### End-of-session dump (AI-runnable)
 
-A `.handoff/` directory looks like this:
+When a Desktop/Claude-Code session ends, have the agent pipe a summary through `handoff capture`:
+
+```
+Session summary in 3 lines.
+DECISION: switched to NURBS perforation via AddInnerProfile
+TODO: test with 200+ holes on the south facade
+CORRECTION: user said perforations go on folds too, not just flats
+```
+
+```bash
+echo "<that summary>" | handoff capture --from stdin
+```
+
+- Appends to `.handoff/transcript.md` with a dated separator (safe to run twice)
+- Extracts every `DECISION:` / `TODO:` / `CORRECTION:` / `TASK:` line into the matching `.handoff/*.md` file
+
+Result: next session sees the full history plus routed markers in the right log files.
+
+---
+
+## Ingesting past work
+
+Seed `.handoff/` from conversations you already had:
+
+```bash
+handoff ingest --from claude-code              # ~/.claude JSONL
+handoff ingest --from cursor                   # Cursor's SQLite state
+handoff ingest --from codex                    # ~/.codex rollouts
+handoff ingest --from gemini                   # ~/.gemini tmp dir
+handoff ingest --from paste --file chat.md     # anything else (Desktop, ChatGPT, etc.)
+handoff ingest --from paste --stdin            # pipe in
+handoff ingest --from paste --clipboard        # read from system clipboard
+handoff ingest --all                           # everything, concatenated
+handoff ingest --from claude-code --list       # enumerate sessions without ingesting
+```
+
+Each mode writes a rendered summary to `.handoff/ingested-context.md` (and the raw paste to `.handoff/transcript.md` for `--from paste`). Future `handoff prime` / `handoff switch` runs surface that context automatically.
+
+---
+
+## `.handoff/` folder layout
 
 ```
 .handoff/
   HANDOFF.md          # index / readme for the folder itself
   task.md             # what we're trying to do
   progress.md         # what's done, what's next
-  decisions.md        # what we decided and why
-  attempts.md         # what we tried that didn't work
+  decisions.md        # what was decided and why
+  attempts.md         # what was tried that didn't work
   corrections.md      # what the user pushed back on
   identity.md         # who the user is, preferences, style
   environment.md      # os, node, git, cwd — refreshed on save
   codebase-map.md     # key files, entry points, module layout
   open-loops.md       # unresolved questions, TODOs for next session
   references.md       # links, docs, issue numbers
-  meta.json           # schema version, source tool, timestamps, project root
-  files.json          # manifest of the above
-  tool-history.jsonl  # append-only per-tool event log
-  transcript.jsonl    # append-only narrative log
+  ingested-context.md # summary of any ingested past session
+  transcript.md       # raw ingested/captured transcript history
+  meta.json           # schema version, source tool, timestamps
+  files.json          # manifest
 ```
 
-**Format constraints:**
+Human-readable, portable (copy the folder, keep the context), tool-agnostic (no tool-specific idioms in the files — that happens at primer-generation time).
 
-- Human-readable markdown plus JSON/JSONL. No binary databases.
-- Portable — copy the folder, keep the context. Commit it, zip it, rsync it.
-- Tool-agnostic. Shared files contain no Claude-specific idioms. Tool-specific framing happens at primer-generation time.
+---
 
-## Integration recipe: Claude Code
+## Command reference
 
-Claude Code has the deepest integration — three hooks in `.claude/settings.json`:
+`handoff <command> --help` prints full options. Quick list:
 
-```json
-{
-  "hooks": {
-    "SessionStart": [
-      {
-        "matcher": "",
-        "hooks": [
-          { "type": "command", "command": "handoff hook session-start" }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "matcher": "",
-        "hooks": [
-          { "type": "command", "command": "handoff hook stop" }
-        ]
-      }
-    ],
-    "StopFailure": [
-      {
-        "matcher": "rate_limit",
-        "hooks": [
-          { "type": "command", "command": "handoff hook rate-limit" }
-        ]
-      }
-    ]
-  }
-}
-```
+| Command | Does |
+|---------|------|
+| `handoff init [--from <tool>] [--force]` | Scaffold `.handoff/` in the current dir |
+| `handoff status` | Show which files are populated vs template |
+| `handoff save` | Refresh env snapshot (os/node/git) |
+| `handoff decide <choice> --because <reason>` | Log a decision |
+| `handoff attempt <what> --error <trace>` | Log a failed approach |
+| `handoff correct <action> --user-said <quote>` | Log a user correction |
+| `handoff capture --from <stdin\|file>` | End-of-session transcript dump + marker extraction |
+| `handoff ingest --from <source>` | Read past sessions from a tool's native storage |
+| `handoff prime --tool <tool>` | Emit a tool-shaped primer to stdout |
+| `handoff switch <tool>` | Save + prime + clipboard + launch |
+| `handoff install --tool <tool>` | Print integration recipe for a tool |
+| `handoff uninstall --tool <tool>` | Print removal recipe |
+| `handoff doctor` | Scan for common install/state issues |
+| `handoff obsidian sync` | Mirror `.handoff/` into an Obsidian vault |
+| `handoff search <query>` | Grep every `.handoff/` on this machine |
+| `handoff patterns` | Cross-project theme report (correction themes, tool usage) |
 
-- `SessionStart` injects the primer automatically — no paste required.
-- `Stop` refreshes `environment.md` so the next tool sees the latest state.
-- `StopFailure` with the `rate_limit` matcher logs the event and prints a swap-tool nudge.
+Supported tool IDs everywhere: `claude-code`, `claude-desktop`, `cursor`, `codex`, `gemini`, `generic`.
 
-**Important:** `StopFailure` is reactive. Claude Code does not currently expose a pre-rate-limit API, so `handoff` cannot warn you before you hit the wall — only after. This is tracked in `ROADMAP.md` under Research.
+---
 
-**Also:** add a section to your `CLAUDE.md` instructing the agent to log as it works:
+## Advanced
 
-```markdown
-## handoff logging
-
-Log meaningful events as you work:
-- `handoff attempt <what> --error <trace>` when an approach fails
-- `handoff decide <choice> --because <reason>` when you pick an approach
-- `handoff correct <action> --user-said <quote>` when the user pushes back
-
-These keep the `.handoff/` folder current so the next tool has full context.
-```
-
-## Integration recipe: Cursor
-
-Cursor does not yet have a stable hook or MCP surface for this. Until it does:
+### Obsidian sync (cross-project memory)
 
 ```bash
-handoff switch cursor
+export HANDOFF_OBSIDIAN_VAULT=/path/to/vault
+handoff obsidian sync
 ```
 
-This saves state, builds the primer, copies it to your clipboard, and launches Cursor in the current directory. Paste the primer as your first message.
+Writes:
+- `Daily/YYYY-MM-DD.md` — one block per run
+- `Decisions/YYYY-MM-DD_<project>_<slug>.md` — one note per decision
+- `Rules/<project>__<slug>.md` — one note per correction
 
-Add a handoff-awareness section to `.cursorrules`:
+Session state becomes permanent searchable memory across every project you work on.
 
-```
-# handoff
+### Search across everything
 
-This project uses `handoff` for cross-tool session state. A `.handoff/`
-folder in the project root contains task, progress, decisions, attempts,
-and corrections as markdown.
-
-Read `.handoff/HANDOFF.md` at the start of each session.
-Log significant events with `handoff attempt`, `handoff decide`, and
-`handoff correct` as you work.
+```bash
+handoff search "nurbs perforation"
 ```
 
-Codex and Gemini follow the same pattern: `handoff switch codex`, `handoff switch gemini`. Native integrations will land as those tools expose suitable extension points.
+Greps every `.handoff/` on the machine. Ranked: exact-word > project recency > file order. Override search roots with `--root` (repeatable) or `HANDOFF_SEARCH_ROOTS` env var.
 
-## Keyboard shortcuts and tray integration
+### Pattern detection
 
-Optional launchers live in `scripts/` (AutoHotkey v2 for Windows, AppleScript for macOS, XDG `.desktop` + shell wrapper for Linux) so you can trigger `handoff switch` from a global hotkey without opening a terminal first — see `scripts/README.md` for install and keybinding steps.
+```bash
+handoff patterns --top 20
+```
 
-## Architecture
+Aggregates correction themes, failure modes, and per-tool usage counts across every `.handoff/` on the machine. Useful for spotting mistakes you keep making your agents undo.
 
-- **Local-first, file-based.** No cloud, no DB, no servers. The source of truth is `.handoff/` in your project root.
-- **Per-project.** Each repo has its own `.handoff/`. Context does not leak across projects.
-- **Integration layers per tool.** Claude Code uses hooks for zero-friction auto-inject. Cursor, Codex, and Gemini use `handoff switch` (clipboard plus launcher) until their extension stories mature.
-- **Ingest parsers.** Claude Code transcripts are read directly from JSONL. Cursor state is read from `state.vscdb` via the built-in `node:sqlite` module — no native bindings, no extra dependencies.
+### Hotkeys
 
-## Roadmap
+`scripts/` has optional global-hotkey launchers: AutoHotkey v2 (Windows), AppleScript (macOS), `.desktop` + shell wrapper (Linux). Bind a hotkey to `handoff switch cursor` and never open a terminal to tool-swap again. See `scripts/README.md`.
 
-v1.0 ships with Claude Code auto-inject, Cursor via switch, and ingest for both. See `ROADMAP.md` for the full v1 through v4 plan: engineering hygiene (tests, `handoff doctor`, `handoff uninstall`), more adapters (Codex, Gemini), native integrations as MCP and hook APIs mature, a tray app, agent-initiated handoffs, and an Obsidian archive target.
+---
+
+## Architecture (brief)
+
+- **Local-first, file-based.** Source of truth is `.handoff/` in your project. No cloud, no DB, no servers.
+- **Per-project.** Each repo owns its own `.handoff/`. No cross-project leaks.
+- **Tool integrations.** Claude Code uses hooks for auto-inject. Desktop uses Projects + filesystem MCP. Cursor/Codex/Gemini use `handoff switch` (clipboard + launcher) until they expose better extension points.
+- **Ingest parsers are native.** Claude Code → JSONL parsing. Cursor → `state.vscdb` via built-in `node:sqlite`. Codex → `~/.codex/sessions` rollouts. Gemini → `~/.gemini/tmp` chats. Paste → anything else.
+- **Zero runtime deps** beyond `commander`. No native bindings.
+
+---
 
 ## Known limitations
 
-- Only tested on Windows so far. Mac and Linux clipboard and launcher paths are in the code but unvalidated — file issues if you hit one.
-- Proactive rate-limit warning is not possible yet. Claude Code only fires `StopFailure` after the limit is hit. Blocked upstream.
-- Schema migration logic is a placeholder. If the schema version in `meta.json` changes across a `handoff` upgrade, you may need to `handoff init --force` and re-seed.
-- `handoff ingest --from cursor` requires Node 22+ for built-in `node:sqlite`. On Node 20 it exits with a clear error.
+- Only tested heavily on Windows. Mac/Linux paths are in the code but unvalidated — file an issue if one breaks.
+- Proactive rate-limit warning isn't possible yet — Claude Code's `StopFailure` only fires *after* the limit. Tracked upstream.
+- Schema migrations are placeholder. If `meta.json`'s schema version changes across an upgrade, you may need `handoff init --force` and re-seed.
+
+---
 
 ## Contributing
 
-File a GitHub issue before opening a PR for anything beyond a bug fix. The file format is part of the contract — additions are welcome, breaking changes need discussion first. Keep the core dependency-free (commander is the only exception).
+File a GitHub issue before opening a PR for anything beyond a bug fix. The file format is part of the contract — additions welcome, breaking changes need discussion first. Keep the core dep-free (commander is the only exception).
+
+See `ROADMAP.md` for what's shipped, what's next, and what was explicitly cut.
 
 ## License
 
