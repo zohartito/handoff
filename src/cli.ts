@@ -13,13 +13,34 @@ import { save } from "./commands/save.js";
 import { prime } from "./commands/prime.js";
 import { install } from "./commands/install.js";
 import { uninstall } from "./commands/uninstall.js";
-import { hook } from "./commands/hook.js";
+import { hook, type HookPayload } from "./commands/hook.js";
 import { ingest } from "./commands/ingest.js";
 import { switchTool } from "./commands/switch.js";
 import { doctor } from "./commands/doctor.js";
 import { obsidian } from "./commands/obsidian.js";
 import { search } from "./commands/search.js";
 import { patterns } from "./commands/patterns.js";
+
+/**
+ * Read + parse the JSON payload Claude Code pipes to a hook on stdin. Returns
+ * `{}` on anything unexpected (TTY, empty, malformed) so the hook never hangs
+ * or throws just because there's no payload.
+ */
+async function readHookPayload(): Promise<HookPayload> {
+  try {
+    if (process.stdin.isTTY) return {};
+    const chunks: Buffer[] = [];
+    for await (const chunk of process.stdin) {
+      chunks.push(chunk as Buffer);
+    }
+    const raw = Buffer.concat(chunks).toString("utf8").trim();
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? (parsed as HookPayload) : {};
+  } catch {
+    return {};
+  }
+}
 
 const program = new Command();
 
@@ -193,9 +214,12 @@ program
 
 program
   .command("hook <event>")
-  .description("internal: runs from a Claude Code hook (session-start | stop | rate-limit)")
+  .description(
+    "internal: runs from a Claude Code hook (session-start | stop | pre-compact | rate-limit)",
+  )
   .action(async (event) => {
-    await hook({ event });
+    const payload = await readHookPayload();
+    await hook({ event, payload });
   });
 
 program

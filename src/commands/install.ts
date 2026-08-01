@@ -22,10 +22,14 @@ Two steps.
 
 ## 1. Add hooks to \`~/.claude/settings.json\` (or project \`.claude/settings.json\`)
 
-Three hooks:
+Four hooks:
 - \`SessionStart\` → auto-injects the handoff primer into every new session
   (only when the project has a \`.handoff/\` directory; silent no-op otherwise)
-- \`Stop\` → \`handoff save\` refreshes environment snapshot on session end
+- \`Stop\` → \`handoff save\` refreshes the environment snapshot on session end
+  AND auto-captures failed build/test attempts + user corrections from the
+  session transcript (so logging happens even when the agent forgets to)
+- \`PreCompact\` (optional) → runs the same auto-capture before Claude Code
+  compacts the transcript, so nothing is lost to compaction
 - \`StopFailure\` with \`rate_limit\` matcher → logs the rate-limit event and
   reminds you to swap tools
 
@@ -54,6 +58,17 @@ ${"```"}json
         ]
       }
     ],
+    "PreCompact": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "handoff hook pre-compact"
+          }
+        ]
+      }
+    ],
     "StopFailure": [
       {
         "matcher": "rate_limit",
@@ -68,6 +83,13 @@ ${"```"}json
   }
 }
 ${"```"}
+
+The Stop and PreCompact hooks read Claude Code's JSON payload on stdin
+(\`transcript_path\`, \`session_id\`, \`stop_hook_active\`) and are engineered
+to never break a session: everything is best-effort, nothing is written to
+stdout, and a per-session cursor + content hashes keep entries from being
+logged twice. Auto-capture only writes \`attempts.md\` and \`corrections.md\`
+(tagged \`**source:** auto\`); it never writes decisions or a transcript.
 
 Note on rate-limit: Claude Code has no *proactive* rate-limit hook (no
 "80% warning"). \`StopFailure\` fires *after* you hit the limit. That's

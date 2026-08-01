@@ -1,0 +1,330 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import {
+  autoCapture,
+  detectFailedAttempts,
+  detectCorrections,
+  hashEntry,
+} from "../src/commands/auto-capture.js";
+import { parseSessionEvents, type ParsedSession, type BashCall, type UserTurn } from "../src/commands/ingest.js";
+import { attempt } from "../src/commands/attempt.js";
+import { resolveHandoffPaths } from "../src/format/paths.js";
+
+const here = dirname(fileURLToPath(import.meta.url));
+// `here` at runtime is dist-test/tests/ — fixtures live next to the source.
+const FIXTURE = resolve(here, "../../tests/fixtures/auto-capture/session.jsonl");
+
+// ---- test helpers -----------------------------------------------------------
+
+function mkSession(partial: Partial<ParsedSession>): ParsedSession {
+  return {
+    sessionId: null,
+    file: "x",
+    cwd: null,
+    firstTs: null,
+    lastTs: null,
+    userMsgs: [],
+    assistantTurns: [],
+    errors: [],
+    toolCounts: {},
+    filesTouched: new Set(),
+    bashCommands: [],
+    bashCalls: [],
+    userTurns: [],
+    startLine: 0,
+    linesProcessed: 0,
+    ...partial,
+  };
+}
+
+function bash(command: string, isError: boolean, errorText = ""): BashCall {
+  return { ts: "2026-05-01T09:00:00.000Z", command, isError, errorText };
+}
+
+function userTurn(text: string, index: number, precedingAssistant: string | null = "did a thing"): UserTurn {
+  return { ts: "2026-05-01T09:00:00.000Z", text, index, precedingAssistant };
+}
+
+function scaffoldHandoff(): string {
+  const dir = mkdtempSync(join(tmpdir(), "handoff-autocap-"));
+  mkdirSync(join(dir, ".handoff"), { recursive: true });
+  return dir;
+}
+
+/** Build a JSONL transcript with a failing then (optionally) passing Bash call. */
+function failingBashJsonl(command: string, errorContent: string, sessionId = "s"): string {
+  const t = "2026-05-01T09:00:00.000Z";
+  return [
+    JSON.stringify({ type: "assistant", timestamp: t, sessionId, message: { role: "assistant", content: [{ type: "tool_use", id: "b1", name: "Bash", input: { command } }] } }),
+    JSON.stringify({ type: "user", timestamp: t, sessionId, message: { role: "user", content: [{ type: "tool_result", tool_use_id: "b1", is_error: true, content: errorContent }] } }),
+  ].join("\n") + "\n";
+}
+
+// ---- pure detectors: corrections -------------------------------------------
+
+test("detectCorrections: correction cue fires on a short non-first message", () => {
+  const s = mkSession({
+    userTurns: [userTurn("build the thing", 0), userTurn("no, use pathlib instead", 1, "used os.path")],
+  });
+  const out = detectCorrections(s);
+  assert.equal(out.length, 1);
+  assert.equal(out[0].userSaid, "no, use pathlib instead");
+  assert.equal(out[0].agentDid, "used os.path");
+});
+
+test("detectCorrections: ignores the first user message of the session", () => {
+  const s = mkSession({ startLine: 0, userTurns: [userTurn("no, do it this way", 0)] });
+  assert.equal(detectCorrections(s).length, 0);
+});
+
+test("detectCorrections: a cue at index 0 DOES fire when the window is not session start", () => {
+  // startLine > 0 means an earlier Stop already consumed the session opener.
+  const s = mkSession({ startLine: 42, userTurns: [userTurn("no, revert that", 0)] });
+  assert.equal(detectCorrections(s).length, 1);
+});
+
+test("detectCorrections: ignores messages longer than 240 chars", () => {
+  const long = "no, " + "x".repeat(300);
+  const s = mkSession({ userTurns: [userTurn("task", 0), userTurn(long, 1)] });
+  assert.equal(detectCorrections(s).length, 0);
+});
+
+test("detectCorrections: ignores non-correction messages", () => {
+  const s = mkSession({ userTurns: [userTurn("task", 0), userTurn("also add a README please", 1)] });
+  assert.equal(detectCorrections(s).length, 0);
+});
+
+// ---- pure detectors: failed attempts ---------------------------------------
+
+test("detectFailedAttempts: a failing meaningful Bash command fires", () => {
+  const s = mkSession({ bashCalls: [bash("npm test", true, "FAIL: 1 test failed")] });
+  const out = detectFailedAttempts(s);
+  assert.equal(out.length, 1);
+  assert.equal(out[0].command, "npm test");
+  assert.equal(out[0].fix, undefined);
+});
+
+test("detectFailedAttempts: a failing non-work Bash command (ls) does NOT fire", () => {
+  const s = mkSession({ bashCalls: [bash("ls -la", true, "ls: cannot access: No such file")] });
+  assert.equal(detectFailedAttempts(s).length, 0);
+});
+
+test("detectFailedAttempts: a failing Grep never reaches bashCalls, so nothing fires", async () => {
+  // Real parse: a failed Grep produces an errors[] entry but no bashCall.
+  const t = "2026-05-01T09:00:00.000Z";
+  const jsonl = [
+    JSON.stringify({ type: "assistant", timestamp: t, message: { role: "assistant", content: [{ type: "tool_use", id: "g1", name: "Grep", input: { pattern: "foo" } }] } }),
+    JSON.stringify({ type: "user", timestamp: t, message: { role: "user", content: [{ type: "tool_result", tool_use_id: "g1", is_error: true, content: "No matches found" }] } }),
+  ].join("\n");
+  const dir = mkdtempSync(join(tmpdir(), "handoff-grep-"));
+  const file = join(dir, "s.jsonl");
+  writeFileSync(file, jsonl, "utf8");
+  try {
+    const session = await parseSessionEvents(file);
+    assert.equal(session.bashCalls.length, 0, "grep is not a bash call");
+    assert.equal(detectFailedAttempts(session).length, 0);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("detectFailedAttempts: a failure with no real-failure token is ignored", () => {
+  const s = mkSession({ bashCalls: [bash("npm run build", true, "some benign warning about deprecation")] });
+  assert.equal(detectFailedAttempts(s).length, 0);
+});
+
+test("detectFailedAttempts: fix is inferred when a later same-verb command succeeds", () => {
+  const s = mkSession({
+    bashCalls: [bash("npm test", true, "Error: 1 failing"), bash("npm test", false)],
+  });
+  const out = detectFailedAttempts(s);
+  assert.equal(out.length, 1);
+  assert.equal(out[0].fix, "later succeeded — see transcript");
+});
+
+// ---- hashEntry stability ----------------------------------------------------
+
+test("hashEntry: stable under whitespace and case differences", () => {
+  const a = hashEntry("attempt", ["npm   TEST"]);
+  const b = hashEntry("attempt", ["npm test"]);
+  assert.equal(a, b);
+  const c = hashEntry("attempt", ["  NPM Test  "]);
+  assert.equal(a, c);
+});
+
+test("hashEntry: different kinds / content produce different hashes", () => {
+  assert.notEqual(hashEntry("attempt", ["npm test"]), hashEntry("correct", ["npm test"]));
+  assert.notEqual(hashEntry("attempt", ["npm test"]), hashEntry("attempt", ["npm build"]));
+});
+
+// ---- failure modes ----------------------------------------------------------
+
+test("autoCapture: nonexistent transcript does not throw and writes nothing", async () => {
+  const dir = scaffoldHandoff();
+  const paths = resolveHandoffPaths(dir);
+  try {
+    await autoCapture({ cwd: dir, payload: { transcript_path: join(dir, "nope.jsonl"), session_id: "x" } });
+    assert.equal(existsSync(paths.attempts), false);
+    assert.equal(existsSync(paths.corrections), false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("autoCapture: no transcript_path in payload is a silent no-op", async () => {
+  const dir = scaffoldHandoff();
+  const paths = resolveHandoffPaths(dir);
+  try {
+    await autoCapture({ cwd: dir, payload: {} });
+    assert.equal(existsSync(paths.attempts), false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("autoCapture: stop_hook_active is a no-op", async () => {
+  const dir = scaffoldHandoff();
+  const paths = resolveHandoffPaths(dir);
+  try {
+    await autoCapture({
+      cwd: dir,
+      payload: { transcript_path: FIXTURE, session_id: "s1", stop_hook_active: true },
+    });
+    assert.equal(existsSync(paths.attempts), false);
+    assert.equal(existsSync(paths.corrections), false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("parseSessionEvents: a malformed line does not break surrounding lines", async () => {
+  const t = "2026-05-01T09:00:00.000Z";
+  const jsonl = [
+    JSON.stringify({ type: "user", timestamp: t, message: { role: "user", content: "first task" } }),
+    "}{ this is not json",
+    JSON.stringify({ type: "user", timestamp: t, message: { role: "user", content: "no, wrong approach" } }),
+  ].join("\n");
+  const dir = mkdtempSync(join(tmpdir(), "handoff-bad-"));
+  const file = join(dir, "s.jsonl");
+  writeFileSync(file, jsonl, "utf8");
+  try {
+    const session = await parseSessionEvents(file);
+    assert.equal(session.userTurns.length, 2, "both good lines parsed around the bad one");
+    assert.equal(session.userTurns[1].text, "no, wrong approach");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// ---- dedup ------------------------------------------------------------------
+
+test("autoCapture: two Stops on the same session produce no second-run entries", async () => {
+  const dir = scaffoldHandoff();
+  const paths = resolveHandoffPaths(dir);
+  const payload = { transcript_path: FIXTURE, session_id: "sess-auto-0001" };
+  try {
+    await autoCapture({ cwd: dir, payload });
+    const attemptsAfter1 = readFileSync(paths.attempts, "utf8");
+    const correctionsAfter1 = readFileSync(paths.corrections, "utf8");
+
+    await autoCapture({ cwd: dir, payload });
+    assert.equal(readFileSync(paths.attempts, "utf8"), attemptsAfter1, "attempts unchanged on 2nd run");
+    assert.equal(readFileSync(paths.corrections, "utf8"), correctionsAfter1, "corrections unchanged on 2nd run");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("autoCapture: a manual entry suppresses the matching auto entry", async () => {
+  const dir = scaffoldHandoff();
+  const paths = resolveHandoffPaths(dir);
+  const origLog = console.log;
+  console.log = () => {};
+  try {
+    // Manually log the same failing command the fixture will auto-detect.
+    await attempt({ what: "npm test", cwd: dir });
+    await autoCapture({ cwd: dir, payload: { transcript_path: FIXTURE, session_id: "sess-auto-0001" } });
+
+    const attempts = readFileSync(paths.attempts, "utf8");
+    const tried = attempts.split("**tried:** npm test").length - 1;
+    assert.equal(tried, 1, "only the manual attempt is present; auto one suppressed");
+    assert.doesNotMatch(attempts, /\*\*source:\*\* auto/, "no auto-tagged attempt was written");
+  } finally {
+    console.log = origLog;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("autoCapture: caps auto attempts at 3 per Stop (keeps the freshest)", async () => {
+  const dir = scaffoldHandoff();
+  const paths = resolveHandoffPaths(dir);
+  const t = "2026-05-01T09:00:00.000Z";
+  const lines: string[] = [];
+  for (let i = 1; i <= 5; i++) {
+    const cmd = `npm run build-${i}`;
+    lines.push(JSON.stringify({ type: "assistant", timestamp: t, message: { role: "assistant", content: [{ type: "tool_use", id: `b${i}`, name: "Bash", input: { command: cmd } }] } }));
+    lines.push(JSON.stringify({ type: "user", timestamp: t, message: { role: "user", content: [{ type: "tool_result", tool_use_id: `b${i}`, is_error: true, content: `Error: build-${i} failed` }] } }));
+  }
+  const file = join(dir, "many.jsonl");
+  writeFileSync(file, lines.join("\n") + "\n", "utf8");
+  try {
+    await autoCapture({ cwd: dir, payload: { transcript_path: file, session_id: "many" } });
+    const attempts = readFileSync(paths.attempts, "utf8");
+    const autoCount = attempts.split("**source:** auto").length - 1;
+    assert.equal(autoCount, 3, "exactly 3 auto attempts written");
+    // Freshest kept: build-3, build-4, build-5 (not build-1 / build-2).
+    assert.match(attempts, /build-5/);
+    assert.match(attempts, /build-4/);
+    assert.match(attempts, /build-3/);
+    assert.doesNotMatch(attempts, /build-1\b/);
+    assert.doesNotMatch(attempts, /build-2\b/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// ---- fixture end-to-end ------------------------------------------------------
+
+test("autoCapture: fixture yields exactly 1 auto attempt + 1 auto correction, idempotent", async () => {
+  const dir = scaffoldHandoff();
+  const paths = resolveHandoffPaths(dir);
+  const payload = { transcript_path: FIXTURE, session_id: "sess-auto-0001" };
+  try {
+    await autoCapture({ cwd: dir, payload });
+
+    // Exactly one auto attempt, tagged, and it's the failing npm test with a fix.
+    const attempts = readFileSync(paths.attempts, "utf8");
+    assert.equal(attempts.split("**source:** auto").length - 1, 1, "one auto attempt");
+    assert.match(attempts, /\*\*tried:\*\* npm test/);
+    assert.match(attempts, /\*\*fix:\*\* later succeeded/);
+
+    // Exactly one auto correction, tagged, capturing the pathlib feedback.
+    const corrections = readFileSync(paths.corrections, "utf8");
+    assert.equal(corrections.split("**source:** auto").length - 1, 1, "one auto correction");
+    assert.match(corrections, /\*\*user said:\*\* no, use pathlib not os\.path/);
+    assert.match(corrections, /\*\*agent did:\*\*/);
+
+    // decisions.md untouched, no transcript written.
+    assert.equal(existsSync(paths.decisions), false, "decisions.md untouched");
+    assert.equal(existsSync(paths.transcript), false, "no transcript.jsonl written");
+    assert.equal(existsSync(join(dir, ".handoff", "transcript.md")), false, "no transcript.md written");
+
+    // Sidecar records the cursor and the two entry hashes.
+    const state = JSON.parse(readFileSync(paths.captureState, "utf8"));
+    assert.equal(state.version, 1);
+    assert.ok(state.sessions["sess-auto-0001"].lastLineProcessed > 0, "cursor advanced");
+    assert.equal(state.seenHashes.length, 2, "two hashes remembered");
+
+    // Re-running appends nothing.
+    const before = readFileSync(paths.attempts, "utf8") + readFileSync(paths.corrections, "utf8");
+    await autoCapture({ cwd: dir, payload });
+    const after = readFileSync(paths.attempts, "utf8") + readFileSync(paths.corrections, "utf8");
+    assert.equal(after, before, "second run is a no-op");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
