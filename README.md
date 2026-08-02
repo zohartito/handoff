@@ -104,7 +104,7 @@ Emits a tool-specific primer prompt to stdout. Pipe it, redirect it, or read it.
 
 Prints the exact integration instructions for the named tool — the `.claude/settings.json` snippet for Claude Code, the Claude Desktop Project setup recipe (filesystem MCP + attached `.handoff/` files), or the `.cursorrules` additions for Cursor. Copy into place manually; `handoff` does not edit your tool configs.
 
-### `handoff hook <session-start|stop|pre-compact|rate-limit>`
+### `handoff hook <session-start|user-prompt-submit|stop|pre-compact|rate-limit>`
 
 Internal. Called by the Claude Code hook system. Do not invoke directly unless you're debugging the hook wiring. `stop` and `pre-compact` read Claude Code's JSON payload on stdin (including `transcript_path`) and, on top of refreshing the environment snapshot, **auto-capture** failed build/test attempts and user corrections straight from the session transcript — so `attempts.md` and `corrections.md` stay populated even when the agent forgets to log by hand. Auto-capture is best-effort and can never break a session; it dedupes via a per-session cursor plus content hashes stored in `.handoff/.capture-state.json`, tags entries with `**source:** auto`, and never writes decisions or a transcript.
 
@@ -171,6 +171,29 @@ Greps every `.handoff/` folder on the machine for `<query>` and returns ranked r
 ### `handoff patterns [--top <n>] [--root <path>...]`
 
 Aggregates correction themes, failure modes, and tool usage across every `.handoff/` on the machine. Uses the same discovery roots as `search`. Tokenizes corrections/attempts (unigrams + bigrams, stopwords filtered), tags each theme with the project languages it appeared in, and reports tool-usage counts. Useful for spotting recurring mistakes you keep correcting LLMs about.
+
+### `handoff verify [--check] [--file <path>] [--stdin]`
+
+Checks whether a receiving agent actually picked up the handoff, instead of you finding out by being annoyed.
+
+Run bare, it prints a restatement prompt: the agent restates the task, the constraints, what already failed, and what's still open. Run with `--check` and the agent's answer, it lists which recorded facts the restatement never mentioned.
+
+```bash
+handoff verify                              # print the prompt for the agent
+handoff verify --check --file answer.md     # score the agent's restatement
+```
+
+**Read the misses, not the number.** Scoring is word overlap, not comprehension — verified adversarially. It cannot see that a restatement *contradicts* the source (negation is invisible), keyword-stuffed nonsense can score full marks, and a correct answer written in synonyms can score zero. That's why it never sets a failing exit code: it's a checklist, not a verdict.
+
+## Staying current without discipline
+
+`.handoff/` is only useful if it reflects reality, and relying on the agent to run `attempt`/`decide`/`correct` by hand does not hold up — in this repo's own history, 14 entries were logged across two days and then nothing for three and a half months across 13 commits. Three mechanisms close that gap:
+
+- **Auto-capture.** The `Stop` and `PreCompact` hooks read the session transcript and log failed build/test attempts and user corrections themselves, tagged `**source:** auto`. Conservative by design (only `Bash` failures that look like real work; only short user messages that open with a correction cue), deduped by a per-session cursor plus content hashes, capped at 3 of each per session, and best-effort so it can never break a session.
+- **Relevance ranking.** Corrections that recur across three or more entries are promoted to a condensed "Standing rules" block above the recent tail, so a rule you've repeated for months isn't pushed out by three fresh one-offs. Auto-captured entries need a higher bar (5) and a theme no human ever confirmed doesn't promote at all.
+- **Mid-session re-injection.** SessionStart re-fires after a compaction (`source: "compact"`), so the full primer already returns then. The optional `UserPromptSubmit` hook covers ordinary drift *between* compactions by re-surfacing the standing rules only — and stays completely silent when nothing has recurred, so the common case costs nothing.
+
+And `handoff doctor` now flags an artifact that has drifted out of sync: commits landing with no `handoff save`, a `task.md` naming a version behind `package.json`, or logs that have gone quiet across many commits. All advisory — staleness never changes the exit code.
 
 ## File format
 
