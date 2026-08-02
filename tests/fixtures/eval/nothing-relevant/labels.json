@@ -1,0 +1,12 @@
+{
+  "description": "The corpus is entirely frontend/CSS corrections (including a promoted flexbox-not-floats theme). The current task is a backend database-migration bug with no overlap. The correct answer is that NOTHING is relevant. This tests whether a retriever can abstain: neither recurrence nor recency can, so both surface confidently-irrelevant entries — an honest limitation worth measuring. An empty relevant set means recall is vacuously 1; precision is what matters here.",
+  "k": 5,
+  "relevant": [],
+  "irrelevant": [
+    "2026-05-01T09:00:00Z",
+    "2026-05-08T09:00:00Z",
+    "2026-05-15T09:00:00Z",
+    "2026-07-02T09:00:00Z",
+    "2026-07-06T09:00:00Z"
+  ]
+}

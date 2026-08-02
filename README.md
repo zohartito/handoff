@@ -185,6 +185,21 @@ handoff verify --check --file answer.md     # score the agent's restatement
 
 **Read the misses, not the number.** Scoring is word overlap, not comprehension — verified adversarially. It cannot see that a restatement *contradicts* the source (negation is invisible), keyword-stuffed nonsense can score full marks, and a correct answer written in synonyms can score zero. That's why it never sets a failing exit code: it's a checklist, not a verdict.
 
+### `handoff evaluate [--strategy <name>] [--compare] [--sweep] [--json] [--k <n>] [--dir <path>]`
+
+Developer tool that makes the relevance-ranking thresholds decidable by measurement instead of reasoning. It is a **deterministic retrieval eval**: over a set of labelled fixture scenarios (`tests/fixtures/eval/`), it asks whether the ranker surfaces the corrections/attempts a human marked relevant to each task, and reports precision, recall, F1, and MRR — no LLM, no API key, offline and reproducible.
+
+```bash
+handoff evaluate                 # score the shipping "recurrence" ranking, per scenario
+handoff evaluate --compare       # recurrence vs a plain recency control, side by side
+handoff evaluate --sweep         # sweep PROMOTION_THRESHOLD 2..6 and report F1 for each
+handoff evaluate --json          # machine-readable output
+```
+
+The `recurrence` strategy calls the real `rankEntries` (the shipping code is the baseline, not a copy); `recency` is a last-N control. On the current corpus recurrence beats recency on every metric, and the sweep puts the shipped `PROMOTION_THRESHOLD = 3` on the optimal F1 plateau (raising it to 4+ discards genuine three-time themes).
+
+**What it measures — and does not.** This is retrieval quality: did the right entries reach the top of the list. It does **not** measure agent behaviour, comprehension, or outcomes, and the shipping ranker is task-blind (it orders by recurrence and recency, never reading the task text). The output states this on every run. See `tests/fixtures/eval/README.md` for the label format.
+
 ## Staying current without discipline
 
 `.handoff/` is only useful if it reflects reality, and relying on the agent to run `attempt`/`decide`/`correct` by hand does not hold up — in this repo's own history, 14 entries were logged across two days and then nothing for three and a half months across 13 commits. Three mechanisms close that gap:

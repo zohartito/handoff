@@ -1,0 +1,11 @@
+{
+  "description": "Three distinct failed approaches at fixing the same flaky test (sleep, timeout bump, mocking S3) plus one correction (do not skip the test). All four are relevant to continuing the fix so the agent does not repeat a dead end. The failed attempts do not share a recurring theme, so promotion does not apply — they must surface via the recent tail. This tests that attempts are pooled and carried across; here recurrence and recency should perform similarly because the relevant items are recent.",
+  "k": 5,
+  "relevant": [
+    "2026-06-15T09:00:00Z",
+    "2026-07-01T09:00:00Z",
+    "2026-07-03T09:00:00Z",
+    "2026-07-05T09:00:00Z"
+  ],
+  "irrelevant": []
+}

@@ -1,0 +1,14 @@
+{
+  "description": "A 'run prettier before commit' nag dominates the corpus (five recurrences) but is irrelevant to pointing the client at staging. The single relevant entry — the API base URL must come from an environment variable — was stated once. This tests precision under a dominant-but-irrelevant theme: recurrence promotes the prettier cluster and lets it crowd out the one on-topic correction, while a recency control catches the recent env-URL entry.",
+  "k": 5,
+  "relevant": [
+    "2026-07-20T13:00:00Z"
+  ],
+  "irrelevant": [
+    "2026-03-01T09:00:00Z",
+    "2026-03-05T09:00:00Z",
+    "2026-03-10T09:00:00Z",
+    "2026-03-15T09:00:00Z",
+    "2026-03-20T09:00:00Z"
+  ]
+}
