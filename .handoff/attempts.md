@@ -143,3 +143,9 @@ most bubbles returned empty/missing workspaceUris; filtering by project yielded 
 
 **fix:** 160/160 tests green; every CLI command exercised live; pbcopy clipboard verified via pbpaste; ingest path branches confirmed for claude-code/cursor/codex/gemini
 ---
+
+## 2026-08-02T00:15:48.819Z
+**tried:** shipped v7.5 repairs: auto-capture, staleness, ranking, verify, re-injection, trust boundary
+
+**fix:** 234/234 tests green; dogfood loop closes end to end; adversarial defects fixed
+---

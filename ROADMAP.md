@@ -181,7 +181,7 @@ Dogfooded into existence: a Claude Desktop conversation with no on-disk transcri
 
 ---
 
-## v7.5 — repairs (in progress)
+## v7.5 — repairs (shipped, 0.8.0)
 
 **Not gated.** The gate below applies to *new surface*. Repairs to the shipped
 v0.1–v0.7 surface ship freely: the tool's own data says the existing design
@@ -201,6 +201,10 @@ artifact that is confidently wrong is worse than none.
 - [x] **`handoff verify`.** Ask a receiving agent to restate task/constraints/do-nots and diff against the source. Today there is no feedback at all on whether a handoff landed.
 - [x] **Re-inject mid-session.** Shipped as a `UserPromptSubmit` hook that re-surfaces standing rules only (silent, zero cost, when nothing has recurred). Note: the original plan named PreCompact, which turned out to be wrong — PreCompact output cannot survive into the post-compaction conversation, and compaction is already covered because SessionStart re-fires with `source: "compact"`. The real gap was ordinary drift *between* compactions.
 - [x] **Trust boundary on injected content.** `.handoff/` is committed and auto-injected as system context; a cloned repo's artifact is attacker-authorable. Mark ingested/committed content as data rather than instructions.
+- [x] **Fixed while validating:** `handoff switch` claimed a launch succeeded when the tool had already exited (terminal agents can't be launched detached — no TTY). Now watches the exit event.
+- [x] **Adversarial pass.** Two verifiers attacked ranking and verify; every real defect they found is fixed and regression-tested. Notably: the ubiquity ceiling was dropping the most-repeated theme at >=5 varied-wording entries, compact primers had no budget enforcement (measured 7128 chars against a 2000 cap), and `verify` scored a correctly-formatted numbered-list answer as zero because the tokenizer skipped list lines.
+- [x] **Dogfood loop.** session -> Stop hook auto-capture -> primer -> verify -> mid-session re-injection, run end to end on a scratch project. Found two further defects (block-form user messages invisible to capture; auto entries labelled `"auto"`), both fixed.
+- [x] 232 -> 234 tests (v7.5 added ~70 across ranking, verify, auto-capture, staleness, re-injection and switch).
 
 ---
 
