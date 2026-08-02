@@ -2,7 +2,8 @@ import { resolveHandoffPaths, type HandoffPaths } from "../format/paths.js";
 import { exists, readOrEmpty } from "../util/fs.js";
 import type { Meta } from "../format/types.js";
 import { loadMeta } from "../format/migrate.js";
-import { rankEntries, splitEntries, type RankedEntries } from "./ranking.js";
+import { rankEntries, splitEntries, condenseEntry, type RankedEntries } from "./ranking.js";
+import { retrieveFromRaw } from "./retrieval.js";
 
 export type Tool =
   | "claude-code"
@@ -369,6 +370,8 @@ type RenderRankedOpts = {
   recentN: number;
   maxStanding: number;
   maxEntryChars: number;
+  /** Current task text. When present, the tail is selected by relevance to it. */
+  task?: string;
 };
 
 /**
@@ -394,14 +397,28 @@ function renderRanked(raw: string, opts: RenderRankedOpts): string[] {
     out.push(`## ${opts.standingTitle}\n\n${lines}`);
   }
 
-  if (ranked.recent.length > 0) {
+  // Standing rules are the always-applies set. The tail below is where the
+  // task matters: when we know what the agent is working on, entries that
+  // relate to it beat merely-recent ones. Measured on the labelled eval,
+  // task-relevant selection scores F1 0.789 against 0.499 for recency/recurrence
+  // — and fixes the two scenarios the recurrence ranker scored zero on.
+  const promoted = new Set(ranked.standing.map((s) => s.line));
+  const tail = opts.task
+    ? retrieveFromRaw(raw, opts.task)
+        .map((e) => e.text)
+        .filter((text) => !promoted.has(condenseEntry(text)))
+        .slice(0, opts.recentN)
+    : ranked.recent;
+
+  if (tail.length > 0) {
     const total = splitEntries(raw).length;
-    const shown = ranked.recent.length + ranked.standing.length;
+    const shown = tail.length + ranked.standing.length;
+    const label = opts.task ? "showing" : "showing latest";
     const ptr =
       total > shown
-        ? `\n\n_(showing latest ${ranked.recent.length} of ${total}; see \`.handoff/${opts.file}\` for the rest)_`
+        ? `\n\n_(${label} ${tail.length} of ${total}; see \`.handoff/${opts.file}\` for the rest)_`
         : "";
-    const entries = ranked.recent.map((e) => clampEntry(e, opts.maxEntryChars));
+    const entries = tail.map((e) => clampEntry(e, opts.maxEntryChars));
     out.push(`## ${opts.recentTitle}\n\n${entries.join("\n\n---\n\n")}${ptr}`);
   }
 
@@ -485,6 +502,7 @@ export async function buildCompactPrimer(
 
   // 1. Task — full if short, pointer if long.
   const taskRaw = cleanBody(await readOrEmpty(paths.task));
+  const taskForRetrieval = taskRaw || undefined;
   if (taskRaw) {
     const taskBody =
       taskRaw.length > 500
@@ -517,6 +535,7 @@ export async function buildCompactPrimer(
       standingTitle: "Standing rules (repeated corrections — treat as hard constraints)",
       recentTitle: "Latest corrections",
       file: "corrections.md",
+      task: taskForRetrieval,
       recentN: 3,
       maxStanding: 5,
       maxEntryChars: 400,
@@ -530,6 +549,7 @@ export async function buildCompactPrimer(
       standingTitle: "Recurring failure modes (do not retry)",
       recentTitle: "Latest failed attempts (do not repeat)",
       file: "attempts.md",
+      task: taskForRetrieval,
       recentN: 3,
       maxStanding: 5,
       maxEntryChars: 400,
@@ -602,6 +622,7 @@ export async function buildSubagentPrimer(
 
   // Task — full, so the subagent knows the overarching goal.
   const taskRaw = cleanBody(await readOrEmpty(paths.task));
+  const taskForRetrieval = taskRaw || undefined;
   if (taskRaw) {
     parts.push(`## Task (parent's goal)\n\n${taskRaw}`);
   }
@@ -614,6 +635,7 @@ export async function buildSubagentPrimer(
       standingTitle: "Standing rules (repeated corrections — hard constraints)",
       recentTitle: "Latest corrections",
       file: "corrections.md",
+      task: taskForRetrieval,
       recentN: 2,
       maxStanding: 2,
       maxEntryChars: 300,
@@ -626,6 +648,7 @@ export async function buildSubagentPrimer(
       standingTitle: "Recurring failure modes (do not retry)",
       recentTitle: "Latest failed attempts (do not repeat)",
       file: "attempts.md",
+      task: taskForRetrieval,
       recentN: 2,
       maxStanding: 2,
       maxEntryChars: 300,

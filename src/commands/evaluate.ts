@@ -7,6 +7,7 @@ import {
   entryId,
   PROMOTION_THRESHOLD,
 } from "./ranking.js";
+import { retrieveForTask } from "./retrieval.js";
 
 /**
  * `handoff evaluate` — a deterministic RETRIEVAL eval for the ranking.
@@ -174,9 +175,27 @@ export function makeRecurrenceRetriever(threshold: number = PROMOTION_THRESHOLD)
 }
 
 /** Registered strategies, comparable side by side. */
+/**
+ * Task-aware retrieval: score entries by overlap with the task, with a
+ * recurrence bonus. `weight` 0 is pure relevance.
+ */
+export function makeRelevanceRetriever(weight?: number): Retriever {
+  return (corpus, task, k) =>
+    retrieveForTask(
+      corpus.entries.map((e) => ({ id: e.id, text: e.text })),
+      task,
+      weight === undefined ? {} : { recurrenceWeight: weight },
+    )
+      .slice(0, k)
+      .map((e) => e.id);
+}
+
+/** Registered strategies, comparable side by side. */
 export const STRATEGIES: Record<string, Retriever> = {
   recurrence: makeRecurrenceRetriever(),
   recency,
+  relevance: makeRelevanceRetriever(0),
+  hybrid: makeRelevanceRetriever(),
 };
 
 interface RawLabels {
