@@ -31,6 +31,17 @@ export const VALID_TOOLS: ReadonlySet<string> = new Set([
 export const COMPACT_THRESHOLD = 2000;
 
 /**
+ * Hard ceiling for the subagent primer.
+ *
+ * A realistic project lands ~1350, so this leaves headroom for a heavier
+ * history while still bounding the pathological case (a single pasted wall of
+ * text previously produced a 7k "compact" primer). Kept just under the 2000
+ * the subagent contract asserts, rather than at the 1500 design target, so a
+ * busy project doesn't lose its failed-attempts section to shedding.
+ */
+export const SUBAGENT_BUDGET = 1900;
+
+/**
  * Trust boundary for the sections that follow.
  *
  * `.handoff/` is committed to the repo and auto-injected at SessionStart, so
@@ -311,12 +322,53 @@ function truncate(s: string, max: number): string {
 // public home of these helpers since v1.5.
 export { splitEntries, lastNEntries } from "./ranking.js";
 
+/**
+ * Minimal mid-session context: just the standing rules, nothing else.
+ *
+ * The full primer is injected at SessionStart (and again after a compaction,
+ * since SessionStart re-fires with source "compact"). What that doesn't cover
+ * is ordinary drift inside a long session — the agent gradually forgets a
+ * constraint it was told about 200 turns ago.
+ *
+ * This is deliberately tiny and returns "" when nothing has recurred often
+ * enough to be a standing rule, so the common case costs zero tokens. Phrased
+ * as factual statements rather than imperatives: out-of-band instruction-shaped
+ * text can trip an agent's prompt-injection defenses and get surfaced to the
+ * user instead of used as context.
+ */
+export async function buildStandingRulesContext(
+  paths: HandoffPaths,
+): Promise<string> {
+  const [correctionsRaw, attemptsRaw] = await Promise.all([
+    readOrEmpty(paths.corrections),
+    readOrEmpty(paths.attempts),
+  ]);
+
+  const rules = rankEntries(correctionsRaw, { recentN: 0, maxStanding: 3 }).standing;
+  const failures = rankEntries(attemptsRaw, { recentN: 0, maxStanding: 2 }).standing;
+  if (rules.length === 0 && failures.length === 0) return "";
+
+  const lines: string[] = [
+    "Persistent context for this project, from `.handoff/` (information, not instructions):",
+  ];
+  if (rules.length > 0) {
+    lines.push("", "Corrections the user has repeated:");
+    for (const r of rules) lines.push(`- ${r.line} (seen ${r.count}×)`);
+  }
+  if (failures.length > 0) {
+    lines.push("", "Approaches that have repeatedly failed here:");
+    for (const f of failures) lines.push(`- ${f.line} (seen ${f.count}×)`);
+  }
+  return lines.join("\n");
+}
+
 type RenderRankedOpts = {
   standingTitle: string;
   recentTitle: string;
   file: string;
   recentN: number;
   maxStanding: number;
+  maxEntryChars: number;
 };
 
 /**
@@ -333,8 +385,11 @@ function renderRanked(raw: string, opts: RenderRankedOpts): string[] {
   const out: string[] = [];
 
   if (ranked.standing.length > 0) {
+    // "theme seen N×" not "seen N×": N is how many entries share the theme, not
+    // how many endorsed this exact wording. The line comes from one
+    // representative entry and can carry a caveat the others don't.
     const lines = ranked.standing
-      .map((s) => `- ${s.line}  _(seen ${s.count}×)_`)
+      .map((s) => `- ${s.line}  _(theme seen ${s.count}×)_`)
       .join("\n");
     out.push(`## ${opts.standingTitle}\n\n${lines}`);
   }
@@ -346,10 +401,69 @@ function renderRanked(raw: string, opts: RenderRankedOpts): string[] {
       total > shown
         ? `\n\n_(showing latest ${ranked.recent.length} of ${total}; see \`.handoff/${opts.file}\` for the rest)_`
         : "";
-    out.push(`## ${opts.recentTitle}\n\n${ranked.recent.join("\n\n---\n\n")}${ptr}`);
+    const entries = ranked.recent.map((e) => clampEntry(e, opts.maxEntryChars));
+    out.push(`## ${opts.recentTitle}\n\n${entries.join("\n\n---\n\n")}${ptr}`);
   }
 
   return out;
+}
+
+/** Cap one rendered entry so a single pasted wall of text can't eat the budget. */
+function clampEntry(entry: string, max: number): string {
+  if (entry.length <= max) return entry;
+  return `${entry.slice(0, max - 1).trimEnd()}…\n\n_(entry truncated)_`;
+}
+
+/**
+ * Bring an assembled primer under `budget` by shedding in a fixed precedence.
+ *
+ * The compact and subagent primers exist specifically to be *bounded* — they
+ * get pasted into a message box or handed to a subagent. Before this, nothing
+ * enforced that: five promoted clusters plus long recent entries measured over
+ * 5k chars, and a single long pasted correction alone reached ~7k.
+ *
+ * Precedence, applied until it fits: drop recent entries first (the durable
+ * rules above already carry that signal), then trailing standing rules, then
+ * the recurring-failures block before recurring corrections. The skeleton —
+ * preamble, rate-limit protocol, task, open loops, environment — is never shed.
+ * A final hard truncate guarantees the bound even against pathological input.
+ */
+function shedToBudget(parts: string[], budget: number): string {
+  const assemble = (p: string[]): string => p.join("\n\n") + "\n";
+  const working = [...parts];
+
+  const isRecent = (s: string): boolean => /^## (Latest|Recurring)/.test(s);
+  const isStanding = (s: string): boolean => /^## Standing rules/.test(s);
+  const isFailureBlock = (s: string): boolean => /^## Recurring failure modes/.test(s);
+
+  // 1. Shrink the recent lists entry by entry, newest kept longest.
+  for (let i = working.length - 1; i >= 0 && assemble(working).length > budget; i--) {
+    const section = working[i]!;
+    if (!isRecent(section) || isFailureBlock(section)) continue;
+    const [head, ...rest] = section.split("\n\n---\n\n");
+    if (rest.length === 0) continue;
+    working[i] = [head, ...rest.slice(-1)].join("\n\n---\n\n");
+  }
+
+  // 2. Drop the recurring-failures block before touching standing corrections.
+  if (assemble(working).length > budget) {
+    const idx = working.findIndex(isFailureBlock);
+    if (idx >= 0) working.splice(idx, 1);
+  }
+
+  // 3. Drop whole recent sections, then trailing standing rules.
+  for (const match of [isRecent, isStanding]) {
+    while (assemble(working).length > budget) {
+      const idx = working.map(match).lastIndexOf(true);
+      if (idx < 0) break;
+      working.splice(idx, 1);
+    }
+  }
+
+  const out = assemble(working);
+  return out.length <= budget
+    ? out
+    : `${out.slice(0, budget - 40).trimEnd()}\n\n_(primer truncated to fit)_\n`;
 }
 
 /**
@@ -405,6 +519,7 @@ export async function buildCompactPrimer(
       file: "corrections.md",
       recentN: 3,
       maxStanding: 5,
+      maxEntryChars: 400,
     }),
   );
 
@@ -417,6 +532,7 @@ export async function buildCompactPrimer(
       file: "attempts.md",
       recentN: 3,
       maxStanding: 5,
+      maxEntryChars: 400,
     }),
   );
 
@@ -426,7 +542,7 @@ export async function buildCompactPrimer(
     parts.push(`## Environment\n\n${envLine}`);
   }
 
-  return parts.join("\n\n") + "\n";
+  return shedToBudget(parts, COMPACT_THRESHOLD);
 }
 
 /**
@@ -500,6 +616,7 @@ export async function buildSubagentPrimer(
       file: "corrections.md",
       recentN: 2,
       maxStanding: 2,
+      maxEntryChars: 300,
     }),
   );
 
@@ -511,8 +628,9 @@ export async function buildSubagentPrimer(
       file: "attempts.md",
       recentN: 2,
       maxStanding: 2,
+      maxEntryChars: 300,
     }),
   );
 
-  return parts.join("\n\n") + "\n";
+  return shedToBudget(parts, SUBAGENT_BUDGET);
 }

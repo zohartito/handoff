@@ -112,7 +112,7 @@ OPEN LOOPS: validate the clipboard cascade on a real Linux desktop.`,
   }
 });
 
-test("an empty-headed restatement is flagged and exits 1", async () => {
+test("a hollow restatement is flagged — but never as an exit code", async () => {
   const paths = scaffold();
   const root = join(paths.dir, "..");
   const answer = join(root, "bad.md");
@@ -122,13 +122,64 @@ test("an empty-headed restatement is flagged and exits 1", async () => {
   const cap = captureStdout();
   try {
     await verify({ check: true, file: answer, cwd: root });
-    assert.match(cap.text(), /looks incomplete/);
+    assert.match(cap.text(), /little of `\.handoff\/` came through/);
     assert.match(cap.text(), /not reflected in the restatement/);
-    assert.equal(process.exitCode, 1, "a hollow restatement must fail");
+    // Scoring is word overlap: it cannot see contradiction, keyword-stuffed
+    // nonsense can score full marks, and a correct paraphrase can score zero.
+    // Gating an exit code on that would encode a signal that does not hold.
+    assert.equal(process.exitCode, 0, "a heuristic score must not gate anything");
   } finally {
     cap.restore();
     process.exitCode = prev;
   }
+});
+
+test("every run prints the caveat about what the score cannot see", async () => {
+  const paths = scaffold();
+  const root = join(paths.dir, "..");
+  const answer = join(root, "any.md");
+  writeFileSync(answer, "TASK: build a portable session-state CLI for handing off mid-task.");
+  const cap = captureStdout();
+  try {
+    await verify({ check: true, file: answer, cwd: root });
+    assert.match(cap.text(), /word-overlap matching, not comprehension/);
+    assert.match(cap.text(), /checklist, not a verdict/);
+  } finally {
+    cap.restore();
+  }
+});
+
+test("a numbered-list answer scores like the same content as prose", async () => {
+  // The restatement prompt asks for a numbered list. The shared tokenizer skips
+  // list lines by default, which silently discarded every line of a correctly
+  // formatted answer and scored a perfect restatement as zero.
+  const paths = scaffold();
+  const root = join(paths.dir, "..");
+  const body = [
+    "the task is to build a portable session-state CLI so agents hand off mid-task without re-explaining",
+    "always prefer pathlib over os.path",
+    "parsing the transcript with a naive newline split broke on multi-line traces",
+    "validate the clipboard cascade on a real Linux desktop",
+  ];
+  const prose = join(root, "prose.md");
+  const listed = join(root, "listed.md");
+  writeFileSync(prose, body.join("\n"));
+  writeFileSync(listed, body.map((l, i) => `${i + 1}. ${l}`).join("\n"));
+
+  const score = async (file: string): Promise<string> => {
+    const cap = captureStdout();
+    try {
+      await verify({ check: true, file, cwd: root });
+      return cap.text().match(/carried across: (\d+\/\d+)/)?.[1] ?? "";
+    } finally {
+      cap.restore();
+    }
+  };
+
+  const prosePart = await score(prose);
+  const listPart = await score(listed);
+  assert.ok(prosePart.length > 0, "expected a score line");
+  assert.equal(listPart, prosePart, "list formatting must not change the score");
 });
 
 test("verify --check on a missing file errors cleanly", async () => {

@@ -32,16 +32,33 @@ export const STOPWORDS: ReadonlySet<string> = new Set<string>([
  * code and emphasis so we don't tokenize punctuation. Drops tokens of length
  * <= 2, pure digits, and stopwords.
  */
-export function extractNgrams(md: string): Map<string, number> {
+export function extractNgrams(
+  md: string,
+  opts: { includeListLines?: boolean } = {},
+): Map<string, number> {
   const counts = new Map<string, number>();
   if (!md) return counts;
 
-  for (const rawLine of md.split(/\r?\n/)) {
-    const line = rawLine.trim();
+  // Callers that tokenize prose written *by* someone (a restatement, an open
+  // loop) must keep list lines: skipping them silently discards the entire
+  // content of any answer written as a numbered or bulleted list. Only the
+  // cross-project theme scan wants them dropped as low-signal structure.
+  const keepLists = opts.includeListLines === true;
+
+  // Comment banners are boilerplate shipped in every template — tokenizing them
+  // manufactures identical "themes" in every project.
+  const body = md.replace(/<!--[\s\S]*?-->/g, " ");
+
+  for (const rawLine of body.split(/\r?\n/)) {
+    let line = rawLine.trim();
     if (!line) continue;
     if (line.startsWith("#")) continue;
-    if (/^[-*+]\s/.test(line)) continue;
-    if (/^\d+[.)]\s/.test(line)) continue;
+    if (/^[-*+]\s/.test(line) || /^\d+[.)]\s/.test(line)) {
+      if (!keepLists) continue;
+      // Strip the marker (and any checkbox) so it doesn't pollute the tokens.
+      line = line.replace(/^([-*+]|\d+[.)])\s+/, "").replace(/^\[[ xX]?\]\s*/, "");
+      if (!line) continue;
+    }
     if (line.startsWith("---")) continue;
     // Strip markdown emphasis and inline code fences so we don't tokenize asterisks.
     const stripped = line

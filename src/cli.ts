@@ -216,7 +216,7 @@ program
 program
   .command("hook <event>")
   .description(
-    "internal: runs from a Claude Code hook (session-start | stop | pre-compact | rate-limit)",
+    "internal: runs from a Claude Code hook (session-start | user-prompt-submit | stop | pre-compact | rate-limit)",
   )
   .action(async (event) => {
     const payload = await readHookPayload();

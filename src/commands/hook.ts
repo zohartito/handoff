@@ -1,12 +1,17 @@
 import { platform } from "node:os";
 import { resolveHandoffPaths } from "../format/paths.js";
 import { exists } from "../util/fs.js";
-import { buildPrimer } from "./prime.js";
+import { buildPrimer, buildStandingRulesContext } from "./prime.js";
 import { save } from "./save.js";
 import { attempt } from "./attempt.js";
 import { autoCapture } from "./auto-capture.js";
 
-export type HookEvent = "session-start" | "stop" | "pre-compact" | "rate-limit";
+export type HookEvent =
+  | "session-start"
+  | "user-prompt-submit"
+  | "stop"
+  | "pre-compact"
+  | "rate-limit";
 
 /**
  * The JSON payload Claude Code delivers on stdin to a hook command. For Stop /
@@ -40,11 +45,31 @@ export async function hook(opts: HookOpts): Promise<void> {
   }
 
   if (opts.event === "session-start") {
+    // Deliberately not gated on payload.source: SessionStart re-fires after a
+    // compaction (source "compact") and on resume/clear/fork, and re-injecting
+    // the primer at each of those is exactly what we want.
     const primer = await buildPrimer(paths, "claude-code", 9000);
     const payload = {
       hookSpecificOutput: {
         hookEventName: "SessionStart",
         additionalContext: primer,
+      },
+    };
+    await writeStdout(JSON.stringify(payload) + "\n");
+    return;
+  }
+
+  if (opts.event === "user-prompt-submit") {
+    // Mid-session drift guard. SessionStart covers startup and post-compaction;
+    // this covers the long stretch in between, where a constraint logged 200
+    // turns ago quietly stops being honoured. Standing rules only — emitting
+    // the whole primer on every prompt would be a large recurring token cost.
+    const rules = await buildStandingRulesContext(paths);
+    if (!rules) return; // nothing durable logged yet: stay silent, cost nothing
+    const payload = {
+      hookSpecificOutput: {
+        hookEventName: "UserPromptSubmit",
+        additionalContext: rules,
       },
     };
     await writeStdout(JSON.stringify(payload) + "\n");

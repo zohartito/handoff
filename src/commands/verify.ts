@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { resolveHandoffPaths } from "../format/paths.js";
 import { exists, readOrEmpty } from "../util/fs.js";
 import { extractNgrams } from "../util/ngrams.js";
-import { rankEntries } from "./ranking.js";
+import { rankEntries, entryTextForRanking } from "./ranking.js";
 
 /**
  * `handoff verify` — did the handoff actually land?
@@ -58,7 +58,11 @@ type Fact = {
 
 /** Distinctive terms for one piece of source text, most-distinctive first. */
 export function keyTerms(text: string, limit = 8): string[] {
-  const counts = extractNgrams(text);
+  // includeListLines is essential on both sides of the comparison: open loops
+  // are bullets, and the restatement prompt explicitly asks for a numbered
+  // list. Dropping list lines discarded the entire content of a correctly
+  // formatted answer, scoring a perfect restatement as zero.
+  const counts = extractNgrams(entryTextForRanking(text), { includeListLines: true });
   // Prefer bigrams (more specific), then by frequency, then alphabetical for
   // determinism.
   return [...counts.entries()]
@@ -84,7 +88,9 @@ export function factCovered(fact: Fact, restatement: string): boolean {
   // Tokenize the restatement exactly as the terms were produced, so matching is
   // on whole words and bigrams. Plain substring matching let a term hit inside
   // an unrelated longer word, which handed partial credit to pure filler.
-  const hay = new Set(extractNgrams(restatement).keys());
+  const hay = new Set(
+    extractNgrams(restatement, { includeListLines: true }).keys(),
+  );
   const hits = fact.terms.filter((t) => hay.has(t)).length;
   const needed = Math.min(
     fact.terms.length,
@@ -135,13 +141,16 @@ export async function collectFacts(paths: ReturnType<typeof resolveHandoffPaths>
   const openLoops = (await readOrEmpty(paths.openLoops)).trim();
   const loopLines = openLoops
     .split("\n")
-    .map((l) => l.trim())
-    .filter((l) => /^[-*]\s*\[?\s?\]?/.test(l) && l.replace(/^[-*\s[\]]+/, "").length > 12)
+    // Only top-level bullets: an indented sub-bullet is a detail of the loop
+    // above it, not a loop of its own.
+    .filter((l) => /^[-*]\s/.test(l))
+    // A checked box is finished work. Counting it as open inflates the
+    // denominator and asks the agent to restate something already done.
+    .filter((l) => !/^[-*]\s*\[[xX]\]/.test(l.trim()))
+    .map((l) => l.trim().replace(/^[-*]\s+/, "").replace(/^\[\s*\]\s*/, ""))
+    .filter((l) => l.length > 12)
     .slice(0, 3);
-  for (const loop of loopLines) {
-    // Strip the list bullet before tokenizing: the shared ngram extractor skips
-    // lines that start with one, so passing the raw line yields zero terms.
-    const text = loop.replace(/^[-*\s[\]]+/, "");
+  for (const text of loopLines) {
     facts.push({
       kind: "open-loop",
       label: `open loop: "${truncate(text, 60)}"`,
@@ -166,6 +175,17 @@ export async function verify(opts: VerifyOpts = {}): Promise<void> {
 
   if (!opts.check) {
     console.log(RESTATEMENT_PROMPT);
+    return;
+  }
+
+  // Reading stdin from an interactive terminal waits for EOF forever with no
+  // prompt — the user just sees a hang. Fail fast and say what to do instead.
+  if (!opts.file && !opts.stdin && process.stdin.isTTY) {
+    console.error(
+      "verify: --check needs a restatement. pass `--file <path>`, or pipe one in:\n" +
+        "  cat answer.md | handoff verify --check --stdin",
+    );
+    process.exitCode = 1;
     return;
   }
 
@@ -212,22 +232,30 @@ export async function verify(opts: VerifyOpts = {}): Promise<void> {
     console.log();
   }
 
-  // Deliberately hedged: lexical matching proves a fact was mentioned, never
-  // that it was understood. Absence is the trustworthy half of this signal.
-  if (ratio >= PASS_RATIO) {
-    console.log(
-      missed.length === 0
-        ? "every fact was mentioned. that means nothing was silently dropped —\n" +
-            "it does not prove the agent understood them."
-        : "most facts carried across. review the misses above before continuing.",
-    );
+  if (missed.length === 0) {
+    console.log("every fact was mentioned somewhere in the restatement.");
+  } else if (ratio >= PASS_RATIO) {
+    console.log("most facts were mentioned. the misses above are worth a look.");
   } else {
     console.log(
-      "the handoff looks incomplete — the receiving agent did not mention most of\n" +
-        "what `.handoff/` records. re-prime it (`handoff prime`) before it starts work.",
+      "little of `.handoff/` came through. worth re-priming (`handoff prime`)\n" +
+        "before the agent starts work — but read the misses first, see the caveat.",
     );
-    process.exitCode = 1;
   }
+
+  // The honest caveat, printed every time.
+  //
+  // This is word-overlap matching, and it was tested adversarially: a
+  // restatement that CONTRADICTS the source scores the same as one that agrees
+  // (negation is invisible), keyword-stuffed nonsense can score full marks, and
+  // a correct answer written in synonyms can score zero. So the number is a
+  // prompt to go look, not a grade — and deliberately NOT an exit code. Gating
+  // anything on it would encode a signal that does not hold.
+  console.log(
+    "\nthis is word-overlap matching, not comprehension: it cannot see whether a\n" +
+      "restatement contradicts the source, and a correct answer in different words\n" +
+      "will under-score. treat the misses as a checklist, not a verdict.",
+  );
 }
 
 function firstValue(entry: string): string {

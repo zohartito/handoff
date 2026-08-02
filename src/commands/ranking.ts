@@ -102,9 +102,16 @@ export function entryTextForRanking(entry: string): string {
     .replace(/\*\*[a-z][a-z ]*:\*\*/gi, " ");
 }
 
-/** Default auto-detection: entries tagged by the Stop-hook capture path. */
+/**
+ * Default auto-detection: entries tagged by the Stop-hook capture path.
+ *
+ * Fenced code is stripped first — a hand-written correction that *quotes* the
+ * marker (complaining about it, say) would otherwise be misread as machine
+ * generated and held to the higher auto-only promotion bar.
+ */
 function defaultIsAuto(entry: string): boolean {
-  return /^\*\*source:\*\*\s*auto\s*$/im.test(entry);
+  const withoutFences = entry.replace(/```[\s\S]*?```/g, " ").replace(/`[^`]*`/g, " ");
+  return /^\*\*source:\*\*\s*auto\s*$/im.test(withoutFences);
 }
 
 /**
@@ -138,6 +145,7 @@ function dominantNgram(
   ngrams: ReadonlySet<string>,
   entryFreq: ReadonlyMap<string, number>,
   totalEntries: number,
+  promotionThreshold: number,
 ): string | null {
   const ceiling =
     totalEntries >= MIN_ENTRIES_FOR_UBIQUITY_FILTER
@@ -164,10 +172,23 @@ function dominantNgram(
     return best;
   };
 
-  // Prefer a discriminative theme. But if everything this entry contains is
-  // ubiquitous, the ubiquitous term IS the theme — a corrections file that is
-  // entirely about one thing should still promote that one thing.
-  return pick(ceiling) ?? pick(Infinity);
+  // Prefer a discriminative theme — but only if it is actually promotable.
+  //
+  // Falling back only when the filtered pick is *null* was a real bug: with a
+  // theme restated in varied wording across >=5 entries, the recurring term
+  // exceeds the ceiling and gets filtered, the filtered pick then returns some
+  // incidental singleton (non-null), and the fallback never fires — so every
+  // entry gets a scattered one-off key, nothing clusters, and the single
+  // strongest signal in the file is silently dropped. That is precisely the
+  // regression this feature exists to prevent.
+  //
+  // So: take the discriminative pick only when it can reach the promotion
+  // threshold; otherwise defer to the most-repeated term overall.
+  const discriminative = pick(ceiling);
+  if (discriminative && (entryFreq.get(discriminative) ?? 0) >= promotionThreshold) {
+    return discriminative;
+  }
+  return pick(Infinity) ?? discriminative;
 }
 
 /**
@@ -175,6 +196,17 @@ function dominantNgram(
  * distilled lesson, then what the user actually said, then what was tried —
  * i.e. the most rule-shaped field available.
  */
+/**
+ * Hard cap on a condensed standing-rule line. Without it, a single pasted
+ * multi-hundred-character correction becomes one enormous bullet and blows the
+ * compact primer's whole budget on its own.
+ */
+export const MAX_RULE_LINE = 140;
+
+export function truncateLine(s: string, max = MAX_RULE_LINE): string {
+  return s.length <= max ? s : `${s.slice(0, max - 1).trimEnd()}…`;
+}
+
 export function condenseEntry(entry: string): string {
   const pick = (label: RegExp): string | null => {
     const m = entry.match(label);
@@ -208,7 +240,7 @@ export function rankEntries(raw: string, opts: RankOpts): RankedEntries {
   // Presence per entry, not raw count: a word repeated inside one entry is
   // still only one entry's worth of signal.
   const perEntry = all.map(
-    (e) => new Set(extractNgrams(entryTextForRanking(e)).keys()),
+    (e) => new Set(extractNgrams(entryTextForRanking(e), { includeListLines: true }).keys()),
   );
 
   const entryFreq = new Map<string, number>();
@@ -219,7 +251,7 @@ export function rankEntries(raw: string, opts: RankOpts): RankedEntries {
   // Group entry indices by dominant theme.
   const clusters = new Map<string, number[]>();
   all.forEach((_, i) => {
-    const key = dominantNgram(perEntry[i]!, entryFreq, all.length);
+    const key = dominantNgram(perEntry[i]!, entryFreq, all.length, threshold);
     if (!key) return;
     const bucket = clusters.get(key);
     if (bucket) bucket.push(i);
@@ -239,7 +271,7 @@ export function rankEntries(raw: string, opts: RankOpts): RankedEntries {
     // a refined restatement wins), else newest overall.
     const pool = handLogged.length > 0 ? handLogged : idxs;
     const repIdx = pool[pool.length - 1]!;
-    const line = condenseEntry(all[repIdx]!);
+    const line = truncateLine(condenseEntry(all[repIdx]!));
     if (!line) continue;
 
     standing.push({ line, count: idxs.length });
@@ -249,10 +281,17 @@ export function rankEntries(raw: string, opts: RankOpts): RankedEntries {
   // Strongest themes first; stable tie-break on text keeps output deterministic.
   standing.sort((a, b) => b.count - a.count || a.line.localeCompare(b.line));
 
+  // The newest entry is always shown in full, even when its theme was promoted.
+  // Promotion replaces a whole cluster with one condensed line from a single
+  // representative, so anything unique to another member — a caveat added in
+  // the latest correction, a second line of a multi-line lesson — would vanish
+  // from the primer entirely. Guaranteeing the latest entry survives verbatim
+  // bounds that loss to older, already-summarised material.
+  const newestIdx = all.length - 1;
   const recent = all
     .map((entry, i) => ({ entry, i }))
-    .filter(({ i }) => !promotedIdx.has(i))
-    .slice(-opts.recentN)
+    .filter(({ i }) => !promotedIdx.has(i) || i === newestIdx)
+    .slice(-Math.max(opts.recentN, opts.recentN === 0 ? 0 : 1))
     .map(({ entry }) => entry);
 
   return { standing: standing.slice(0, opts.maxStanding), recent };
