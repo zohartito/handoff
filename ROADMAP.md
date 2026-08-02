@@ -225,6 +225,66 @@ artifact that is confidently wrong is worse than none.
 
 ---
 
+## v8 — measurable, native, installable (in progress)
+
+Three things the tool lacked, in the order that made each decidable.
+
+- [x] **Retrieval eval (`handoff evaluate`).** The thresholds shipped in v7.5
+  were chosen by reasoning, and nothing measured whether the ranking helped at
+  all. This is a deterministic, offline information-retrieval eval over 7
+  labelled scenarios: does the ranker surface the entries a human marked
+  relevant to each task? No LLM, no API key, reproducible. It exists so the
+  rest of this section is decided by numbers.
+- [x] **MCP server (`handoff mcp`).** Reverses the v2 cut (see above). Six
+  tools over hand-rolled stdio JSON-RPC 2.0 — **no new dependency**, so the
+  zero-dep property survives.
+- [x] **Task-relevant retrieval.** Replaces recency/recurrence for the primer
+  tail. Standing rules remain the always-applies set.
+- [x] **Plugin packaging.** `plugin/` + `.claude-plugin/marketplace.json`.
+  Installation no longer depends on hand-editing `~/.claude/settings.json` —
+  the failure that left hooks registered in exactly one repo.
+
+### What the eval actually said
+
+Macro-averaged F1 over the 7 scenarios:
+
+| strategy | F1 |
+|---|---|
+| relevance (now shipping) | **0.810** |
+| hybrid (relevance + recurrence) | 0.595 |
+| recurrence (was shipping) | 0.499 |
+| recency (control) | 0.295 |
+
+Recurrence scored **zero** on two scenarios it structurally cannot handle: a
+critical correction stated once can never resurface when recurrence is the only
+currency, and a large irrelevant cluster fills the cutoff and buries the
+on-topic entry.
+
+**Four of my own design instincts were measured and rejected or corrected**,
+which is the entire point of building the instrument first:
+
+1. Blending recurrence into the relevance score *hurts* (0.810 → 0.595). Weight
+   ships at 0.
+2. An abstention threshold discarded genuine matches before it helped anything.
+   `minScore` ships at 0.
+3. Aggressive stemming (`ing`/`es`) *lowered* F1 to 0.769 by over-stemming
+   ("string" → "str"). Only `s`/`ies` ship.
+4. The v7.5 `PROMOTION_THRESHOLD = 3` was **vindicated** — the sweep puts it on
+   the optimal plateau, with 4+ costing ~38% F1.
+
+Unit tests then caught a bug the eval could not: below 5 entries every term
+trivially appears in 100% of the corpus, so the doc-frequency ceiling deleted
+the whole vocabulary and a small project retrieved *nothing*. Every eval
+scenario has 5+ entries, so the corpus was blind to it.
+
+### What the eval does not measure
+
+Retrieval quality only — whether the right entries reach the top of the list.
+Not agent behaviour, not comprehension, not outcomes. The command prints this
+caveat on every run.
+
+---
+
 ## Future (speculative)
 
 **Gate:** do not build any *new surface* below until at least one of — npm downloads >100/week, 3+ GitHub issues from non-Zohar accounts, or an unsolicited community shoutout. Until then, the v0.1–v0.7 surface is the product; adding more is scope creep in search of a user. (Repairs to that existing surface are not gated — see v7.5 above.)
