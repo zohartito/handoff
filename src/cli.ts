@@ -21,6 +21,7 @@ import { obsidian } from "./commands/obsidian.js";
 import { search } from "./commands/search.js";
 import { patterns } from "./commands/patterns.js";
 import { verify } from "./commands/verify.js";
+import { runMcpServer } from "./mcp/server.js";
 
 /**
  * Read + parse the JSON payload Claude Code pipes to a hook on stdin. Returns
@@ -317,6 +318,20 @@ program
       check: !!(opts.check || opts.file || opts.stdin),
       file: opts.file,
     });
+  });
+
+program
+  .command("mcp")
+  .description(
+    "run an MCP (Model Context Protocol) server over stdio so any MCP-speaking agent (Codex, Cursor, Claude Desktop, Kimi Code) can read + write handoff state natively",
+  )
+  .option(
+    "--cwd <path>",
+    "project root to operate on (default: HANDOFF_PROJECT_ROOT env var, else cwd)",
+  )
+  .action(async (opts) => {
+    const cwd = opts.cwd ?? process.env.HANDOFF_PROJECT_ROOT ?? process.cwd();
+    await runMcpServer({ cwd, version: pkgVersion });
   });
 
 await program.parseAsync(process.argv);
