@@ -36,6 +36,16 @@ claude --plugin-dir ./plugin
 | `PreCompact` | same auto-capture, before the transcript is compacted |
 | `StopFailure` (`rate_limit`) | logs the rate-limit event and suggests a tool to switch to |
 
+## MCP server
+
+The plugin also registers handoff's MCP server, so the agent can read and write
+`.handoff/` as tools mid-conversation instead of via a pasted primer. Tools:
+`handoff_context`, `handoff_open_loops`, `handoff_status`,
+`handoff_log_correction`, `handoff_log_attempt`, `handoff_log_decision`.
+
+It resolves the project root from `CLAUDE_PROJECT_DIR`, so it operates on
+whatever repo the session is in.
+
 ## Requirements
 
 The plugin shells out to `handoff`. It resolves, in order:
