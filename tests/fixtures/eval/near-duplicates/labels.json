@@ -1,0 +1,15 @@
+{
+  "description": "Four near-duplicate corrections all say the same thing — commit messages must use conventional-commit prefixes — in slightly different wording, two of them months old. Writing the release commit makes all four relevant. This tests that clustering recovers every member of a near-duplicate theme, including the older ones a recency window would drop, without them each counting as separate noise.",
+  "k": 5,
+  "relevant": [
+    "2026-02-01T09:00:00Z",
+    "2026-02-10T09:00:00Z",
+    "2026-06-01T09:00:00Z",
+    "2026-06-10T09:00:00Z"
+  ],
+  "irrelevant": [
+    "2026-07-01T09:00:00Z",
+    "2026-07-05T09:00:00Z",
+    "2026-07-10T09:00:00Z"
+  ]
+}

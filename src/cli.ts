@@ -22,6 +22,7 @@ import { search } from "./commands/search.js";
 import { patterns } from "./commands/patterns.js";
 import { verify } from "./commands/verify.js";
 import { runMcpServer } from "./mcp/server.js";
+import { evaluate } from "./commands/evaluate.js";
 
 /**
  * Read + parse the JSON payload Claude Code pipes to a hook on stdin. Returns
@@ -332,6 +333,26 @@ program
   .action(async (opts) => {
     const cwd = opts.cwd ?? process.env.HANDOFF_PROJECT_ROOT ?? process.cwd();
     await runMcpServer({ cwd, version: pkgVersion });
+  });
+
+program
+  .command("evaluate")
+  .description("score the correction/attempt ranking on a labelled retrieval eval (dev tool)")
+  .option("--strategy <name>", "run a single strategy (recurrence | recency)")
+  .option("--compare", "run every strategy side by side with the per-metric winner")
+  .option("--sweep", "sweep PROMOTION_THRESHOLD (2..6) and report F1 for each")
+  .option("--json", "emit machine-readable JSON instead of a table")
+  .option("--k <n>", "retrieval cutoff, overriding each scenario's own k", (v) => parseInt(v, 10))
+  .option("--dir <path>", "eval fixtures directory (default: tests/fixtures/eval)")
+  .action(async (opts) => {
+    await evaluate({
+      strategy: opts.strategy,
+      compare: !!opts.compare,
+      sweep: !!opts.sweep,
+      json: !!opts.json,
+      k: Number.isFinite(opts.k) ? opts.k : undefined,
+      dir: opts.dir,
+    });
   });
 
 await program.parseAsync(process.argv);
