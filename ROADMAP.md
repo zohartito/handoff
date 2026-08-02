@@ -72,16 +72,33 @@ Tiny follow-ups caught during v1.5 ship. None block v3; all low-effort.
 
 ---
 
-## v2 — Cursor MCP server (CUT)
+## v2 — Cursor MCP server (CUT → REVERSED in v8)
 
 Originally planned: expose `.handoff/` as an MCP server so Cursor agents could
 read/write handoff state natively instead of via files.
 
-**Cut because** `handoff switch` + `handoff ingest --from cursor` already give
-Cursor a no-friction path via SQLite + clipboard. MCP would add a moving part
-and a second surface area for bugs without unlocking a real capability the
-file-based path lacks. Revisit only if Cursor's file-based workflow genuinely
-falls short.
+**Cut (April)** because `handoff switch` + `handoff ingest --from cursor`
+already gave Cursor a no-friction path via SQLite + clipboard. MCP would add a
+moving part without unlocking a capability the file-based path lacked — *for
+Cursor*.
+
+**Cut reversed (v8).** The "clipboard + ingest is enough" reasoning only ever
+held for tools we have an adapter for. It has gone stale:
+
+- **Kimi Code** stores sessions in a format we have no `ingest --from` adapter
+  for, so there's no SQLite path to read.
+- **The ChatGPT app** stores nothing locally readable at all.
+
+For both, the clipboard primer is the *only* path today — a pre-MCP, manual
+copy-paste interface. An MCP server gives any MCP-speaking agent (Codex,
+Cursor, Claude Desktop, Kimi Code, the ChatGPT app) native mid-conversation
+read/write access to handoff state, with no clipboard round-trip.
+
+Shipped in v8 as `handoff mcp` (a stdio JSON-RPC 2.0 server, hand-rolled with
+**no new dependency** — the zero-dep property is preserved). Tools:
+`handoff_context`, `handoff_open_loops`, `handoff_log_correction`,
+`handoff_log_attempt`, `handoff_log_decision`, `handoff_status`. See the README
+"MCP server" section for the client config block.
 
 ---
 
