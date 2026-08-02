@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { resolveHandoffPaths } from "../format/paths.js";
 import { exists, readOrEmpty } from "../util/fs.js";
 import { extractNgrams } from "../util/ngrams.js";
-import { rankEntries, entryTextForRanking } from "./ranking.js";
+import { rankEntries, entryTextForRanking, condenseEntry } from "./ranking.js";
 
 /**
  * `handoff verify` — did the handoff actually land?
@@ -258,9 +258,16 @@ export async function verify(opts: VerifyOpts = {}): Promise<void> {
   );
 }
 
+/**
+ * One-line display form of an entry.
+ *
+ * Delegates to the ranking module, which already prefers the rule-shaped
+ * fields (lesson > user said > tried) and ignores the `**source:**` provenance
+ * tag — taking the first field blindly rendered every auto-captured entry as
+ * `correction: "auto"`.
+ */
 function firstValue(entry: string): string {
-  const m = entry.match(/^\*\*[a-z ]+:\*\*\s*(.+)$/im);
-  return m?.[1]?.trim() ?? entry.split("\n").find((l) => l.trim() && !l.startsWith("#"))?.trim() ?? "";
+  return condenseEntry(entry);
 }
 
 function truncate(s: string, n: number): string {

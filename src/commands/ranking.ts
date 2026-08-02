@@ -98,6 +98,10 @@ export function entryTextForRanking(entry: string): string {
   return entry
     .split("\n")
     .filter((l) => !/^##\s/.test(l.trim()))
+    // The provenance tag is metadata, not content. Left in, "auto" becomes a
+    // token shared by every machine-captured entry — a fake theme — and shows
+    // up as the entry's apparent text downstream.
+    .filter((l) => !/^\*\*source:\*\*/i.test(l.trim()))
     .join("\n")
     .replace(/\*\*[a-z][a-z ]*:\*\*/gi, " ");
 }

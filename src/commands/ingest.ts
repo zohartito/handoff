@@ -575,6 +575,26 @@ export async function parseSessionEvents(
             : null,
         });
       } else if (Array.isArray(content)) {
+        // A user message can arrive as content blocks rather than a bare
+        // string (pasted attachments, multi-part input). Previously only
+        // tool_results were read here, so a real correction delivered in
+        // block form was invisible to auto-capture.
+        const spoken = content
+          .filter((part) => part.type === "text" && typeof part.text === "string")
+          .map((part) => part.text as string)
+          .join("\n")
+          .trim();
+        if (spoken) {
+          userMsgs.push({ ts: e.timestamp, text: spoken });
+          userTurns.push({
+            ts: e.timestamp,
+            text: spoken,
+            index: userIndex++,
+            precedingAssistant: lastAssistant
+              ? summarizeAssistantTurn(lastAssistant)
+              : null,
+          });
+        }
         for (const part of content) {
           if (part.type === "tool_result" && part.is_error) {
             const toolName = toolUseById.get(part.tool_use_id) ?? "unknown";

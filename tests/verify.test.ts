@@ -244,3 +244,26 @@ test("pure filler carries across nothing at all", async () => {
     process.exitCode = prev;
   }
 });
+
+test("auto-captured entries are labelled by content, not by their source tag", async () => {
+  // The first field line of a tagged entry is `**source:** auto`, which made
+  // every machine-captured entry render as `correction: "auto"` and polluted
+  // its matching terms with the word "auto".
+  const dir = mkdtempSync(join(tmpdir(), "handoff-verify-auto-"));
+  mkdirSync(join(dir, ".handoff"), { recursive: true });
+  const paths = resolveHandoffPaths(dir);
+  writeFileSync(paths.task, "# Task\n\nShip the importer.\n");
+  writeFileSync(
+    paths.corrections,
+    "# Corrections\n\n## 2026-08-01T10:00:00Z\n\n**source:** auto\n\n**agent did:** used os.path\n\n**user said:** always prefer pathlib over os.path\n\n---\n",
+  );
+  writeFileSync(paths.attempts, "# Attempts\n");
+  writeFileSync(paths.openLoops, "# Open Loops\n");
+
+  const facts = await collectFacts(paths);
+  const constraint = facts.find((f) => f.kind === "constraint");
+  assert.ok(constraint, "expected a constraint fact");
+  assert.doesNotMatch(constraint.label, /"auto"/, "label must show content, not the source tag");
+  assert.match(constraint.label, /pathlib/, "label should show what the user actually said");
+  assert.ok(!constraint.terms.includes("auto"), "provenance tag must not become a matching term");
+});

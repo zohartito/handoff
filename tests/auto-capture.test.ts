@@ -328,3 +328,33 @@ test("autoCapture: fixture yields exactly 1 auto attempt + 1 auto correction, id
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("a user correction delivered as content blocks is captured", async () => {
+  // Claude Code sends user messages either as a bare string or as content
+  // blocks (pasted attachments, multi-part input). Only the string form was
+  // read, so a real correction in block form was invisible to auto-capture.
+  const { parseSessionEvents } = await import("../src/commands/ingest.js");
+  const { detectCorrections } = await import("../src/commands/auto-capture.js");
+  const { mkdtempSync, writeFileSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+
+  const dir = mkdtempSync(join(tmpdir(), "handoff-blockform-"));
+  const file = join(dir, "s.jsonl");
+  const cwd = "/proj";
+  writeFileSync(
+    file,
+    [
+      { type: "user", timestamp: "2026-08-01T10:00:00Z", cwd, sessionId: "s", message: { role: "user", content: [{ type: "text", text: "Build the importer." }] } },
+      { type: "assistant", timestamp: "2026-08-01T10:01:00Z", cwd, sessionId: "s", message: { role: "assistant", content: [{ type: "tool_use", name: "Edit", id: "t1", input: { file_path: "a.py" } }] } },
+      { type: "user", timestamp: "2026-08-01T10:02:00Z", cwd, sessionId: "s", message: { role: "user", content: [{ type: "text", text: "no, don't use os.path here — always prefer pathlib" }] } },
+    ]
+      .map((o) => JSON.stringify(o))
+      .join("\n") + "\n",
+  );
+
+  const session = await parseSessionEvents(file);
+  const found = detectCorrections(session);
+  assert.equal(found.length, 1, "block-form correction should be detected");
+  assert.match(found[0]!.userSaid, /prefer pathlib/);
+});
