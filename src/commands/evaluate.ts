@@ -190,12 +190,35 @@ export function makeRelevanceRetriever(weight?: number): Retriever {
       .map((e) => e.id);
 }
 
-/** Registered strategies, comparable side by side. */
+/**
+ * What the primer ACTUALLY does: order by task relevance, then backfill by
+ * recency up to the cutoff.
+ *
+ * This is the strategy that matters, because it is the shipped one. Pure
+ * relevance is a component, not the product — selecting purely on relevance
+ * silently dropped entries whenever the task didn't overlap them (an off-topic
+ * task, or a task written in a non-Latin script, which tokenizes to nothing).
+ * The backfill makes the floor "no worse than recency" while keeping
+ * relevance's ordering advantage when the task does overlap.
+ */
+export const shipped: Retriever = (corpus, task, k) => {
+  const byRelevance = makeRelevanceRetriever(0)(corpus, task, k);
+  const seen = new Set(byRelevance);
+  const backfill = recency(corpus, task, k).filter((id) => !seen.has(id));
+  return [...byRelevance, ...backfill].slice(0, k);
+};
+
+/**
+ * Registered strategies, comparable side by side.
+ *
+ * `shipped` is the product; the rest are components and controls kept so the
+ * comparison stays honest and re-runnable.
+ */
 export const STRATEGIES: Record<string, Retriever> = {
+  shipped,
   recurrence: makeRecurrenceRetriever(),
   recency,
   relevance: makeRelevanceRetriever(0),
-  hybrid: makeRelevanceRetriever(),
 };
 
 interface RawLabels {

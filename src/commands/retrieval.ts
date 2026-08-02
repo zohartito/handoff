@@ -33,35 +33,41 @@ import {
  * measurement rather than taste.**
  *
  * The intuition was that blending "how often has this recurred" into "how well
- * does this match the task" would beat either alone. The eval says otherwise —
- * macro F1 over the 7 labelled scenarios:
+ * does this match the task" would beat either alone. The eval said otherwise:
+ * every non-zero weight scored strictly worse than pure relevance, because the
+ * bonus drags frequent-but-irrelevant entries back up — the exact failure
+ * task-awareness was added to fix.
  *
- *   pure relevance (weight 0)   0.789
- *   blended (weight 0.2)        0.595
- *   blended (weight 0.6)        0.595
- *   recurrence only (shipping)  0.499
- *
- * Any recurrence weight drags frequent-but-irrelevant entries back up, which is
- * the exact failure task-awareness was added to fix. The knob stays so the
- * finding is re-testable on a larger corpus (`handoff evaluate --compare`), but
- * the default encodes the measurement.
+ * The knob stays so the finding is re-testable on a larger corpus
+ * (`handoff evaluate --compare`), but the default encodes the measurement.
  */
 export const RECURRENCE_WEIGHT = 0;
 
-/** Terms appearing in more than this fraction of entries carry no signal. */
-const DOC_FREQ_CEILING = 0.8;
+/**
+ * Most matched terms that may contribute to one entry's score.
+ *
+ * Without a cap, score is a *sum* over matched terms, so an entry can win purely
+ * by breadth. `.handoff/` is attacker-authorable (clone a hostile repo), and a
+ * single correction stuffed with ~45 broad keywords out-ranked genuinely
+ * on-topic entries on unrelated tasks — it was retrieved first for "refactor the
+ * react cart reducer" *and* "add a file download endpoint". Capping at the
+ * strongest few matches means a stuffed entry gets no more credit than a
+ * precise one, while honest entries (which rarely match more than a handful of
+ * distinctive terms) are unaffected.
+ */
+const MAX_SCORING_TERMS = 8;
 
 /**
- * Below this many entries the ceiling is not applied at all.
+ * Exponent on entry length when normalising the score.
  *
- * With one entry every term trivially appears in 100% of the corpus, so the
- * ceiling discarded the entire vocabulary and the retriever returned nothing —
- * a project with a couple of corrections got no retrieval whatsoever. The eval
- * corpus never caught this because every scenario has five or more entries.
- * "Appears everywhere" only means "carries no signal" once there is enough
- * corpus for everywhere to mean something.
+ * Chosen against both the eval and the stuffing attack. At 0.5 (plain sqrt) the
+ * keyword-stuffed entry still out-ranked a genuinely on-topic one for "add a
+ * file download endpoint" (0.88 vs 0.87). At 0.8 the legitimate entry wins
+ * clearly (0.44 vs 0.23) at no cost to eval F1 — the only cost is a marginal
+ * MRR dip, i.e. the first relevant hit sits slightly lower on average. That's a small, universal cost for a real adversarial property, and
+ * the primer backfills by recency regardless, so nothing is lost either way.
  */
-const MIN_ENTRIES_FOR_DOC_FREQ_CEILING = 5;
+const LENGTH_DAMPING = 0.8;
 
 /**
  * Collapse a token to a crude stem so "migration" matches "migrations" and
@@ -72,10 +78,10 @@ const MIN_ENTRIES_FOR_DOC_FREQ_CEILING = 5;
  * migrations in a transaction".
  *
  * Only `s` and `ies` are stripped, and that restraint is measured. A first pass
- * also stripped `ing` and `es`, which *lowered* eval F1 from 0.789 to 0.769 by
- * over-stemming ("string" → "str", producing false matches). The conservative
- * pair holds F1 at 0.789 while fixing the plural misses — strictly better than
- * both the aggressive version and no stemming at all.
+ * also stripped `ing` and `es`, which *lowered* eval F1 by over-stemming
+ * ("string" → "str", producing false matches). The conservative pair keeps the
+ * score while fixing the plural misses — strictly better than both the
+ * aggressive version and no stemming at all.
  *
  * Deliberately not a real stemmer: the whole module is a zero-dependency
  * lexical scorer. Guarded on length so short words aren't mangled.
@@ -111,19 +117,23 @@ export function buildIdf(entryTexts: string[]): Map<string, number> {
       df.set(t, (df.get(t) ?? 0) + 1);
     }
   }
-  const applyCeiling = n >= MIN_ENTRIES_FOR_DOC_FREQ_CEILING;
+  // No hard ceiling. A cutoff at a fixed entry count created a cliff — adding
+  // one harmless entry to a 4-entry corpus flipped retrieval from four hits to
+  // nothing, because a shared term crossed the threshold and was deleted
+  // outright. IDF already damps ubiquitous terms continuously (a term in every
+  // entry scores log(2), a unique one in a 20-entry corpus scores log(21)), so
+  // the extra switch bought nothing but a discontinuity.
   const idf = new Map<string, number>();
   for (const [term, count] of df) {
-    if (applyCeiling && count / n > DOC_FREQ_CEILING) continue; // corpus boilerplate
     idf.set(term, Math.log(1 + n / count));
   }
   return idf;
 }
 
 /**
- * Similarity between a task and one entry: summed IDF of shared terms,
- * dampened by entry length so a long rambling entry can't win on surface area
- * alone.
+ * Similarity between a task and one entry: summed IDF of the strongest shared
+ * terms, dampened by entry length so a long or keyword-stuffed entry can't win
+ * on surface area alone.
  */
 export function relevanceScore(
   taskTerms: ReadonlySet<string>,
@@ -132,11 +142,21 @@ export function relevanceScore(
 ): number {
   const entryTerms = tokens(entryTextForRanking(entryText));
   if (entryTerms.size === 0) return 0;
-  let score = 0;
+
+  const matched: number[] = [];
   for (const t of entryTerms) {
-    if (taskTerms.has(t)) score += idf.get(t) ?? 0;
+    if (taskTerms.has(t)) matched.push(idf.get(t) ?? 0);
   }
-  return score / Math.sqrt(entryTerms.size);
+  if (matched.length === 0) return 0;
+
+  // Strongest matches only: breadth of weak matches must not beat depth of
+  // strong ones, or keyword-stuffing wins.
+  const score = matched
+    .sort((a, b) => b - a)
+    .slice(0, MAX_SCORING_TERMS)
+    .reduce((sum, v) => sum + v, 0);
+
+  return score / Math.pow(entryTerms.size, LENGTH_DAMPING);
 }
 
 /**
@@ -178,7 +198,8 @@ export interface RetrieveOpts {
    * Defaults to 0 (never abstain) — also a measured choice. Abstaining on a
    * corpus where nothing is relevant is desirable in principle, but every
    * threshold high enough to trigger it discarded genuine matches elsewhere
-   * first (F1 0.789 → 0.703 at 0.2, → 0.571 at 0.5). Cheap abstention needs a
+   * first — every threshold high enough to trigger abstention cost more in
+   * lost true positives than it gained. Cheap abstention needs a
    * signal this scorer doesn't have.
    */
   minScore?: number;

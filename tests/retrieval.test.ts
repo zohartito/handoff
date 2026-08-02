@@ -29,8 +29,8 @@ test("a different task promotes a different entry", () => {
 });
 
 test("recurrence is off by default — measured, not assumed", () => {
-  // The eval scored pure relevance at F1 0.789 and every blended weight at
-  // 0.595; the default encodes that result.
+  // Every non-zero blend weight scored strictly worse than pure relevance on
+  // the eval; the default encodes that result.
   assert.equal(RECURRENCE_WEIGHT, 0);
 });
 
@@ -132,4 +132,38 @@ test("plurals match their singular — stemming is on", () => {
   ];
   const ranked = retrieveForTask(corpus, "write the migration that adds the invoices table");
   assert.equal(ranked[0]!.id, "mig", "'migration' must match 'migrations'");
+});
+
+test("keyword stuffing does not beat a genuinely on-topic entry", () => {
+  // `.handoff/` is attacker-authorable. Scoring was a plain SUM over matched
+  // terms, so an entry stuffed with dozens of broad keywords out-ranked real
+  // ones on unrelated tasks. Capped contribution + stronger length damping fix it.
+  const stuffed = [
+    "react", "redux", "immer", "reducer", "cart", "file", "download", "endpoint",
+    "migration", "database", "css", "auth", "token", "cache", "queue", "docker",
+    "test", "lint", "deploy", "api", "python", "node", "path", "secret", "log",
+  ].join(" ");
+  const corpus = [
+    { id: "attacker", text: mk("2026-01-01T00:00:00Z", stuffed) },
+    { id: "legit", text: mk("2026-02-01T00:00:00Z", "stream file downloads, never buffer the whole file") },
+  ];
+  const ranked = retrieveForTask(corpus, "add a file download endpoint from uploads");
+  assert.equal(ranked[0]!.id, "legit", "a precise entry must beat a keyword-stuffed one");
+});
+
+test("adding one entry cannot flip retrieval to empty", () => {
+  // A hard doc-frequency ceiling that switched on at a fixed corpus size made
+  // this discontinuous: growing 4 -> 5 entries deleted a shared term from the
+  // vocabulary outright and returned nothing.
+  const base = Array.from({ length: 4 }, (_, i) => ({
+    id: `e${i}`,
+    text: mk(`2026-0${i + 1}-01T00:00:00Z`, "always commit with a descriptive message"),
+  }));
+  const four = retrieveForTask(base, "commit the fix");
+  const five = retrieveForTask(
+    [...base, { id: "extra", text: mk("2026-05-01T00:00:00Z", "unrelated styling note") }],
+    "commit the fix",
+  );
+  assert.ok(four.length > 0, "4-entry corpus must retrieve");
+  assert.ok(five.length > 0, "adding a harmless entry must not empty retrieval");
 });

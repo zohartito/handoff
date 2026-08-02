@@ -509,3 +509,45 @@ test("the compact primer's tail is chosen by relevance to the task", async () =>
   const out = await buildCompactPrimer(paths, "generic");
   assert.match(out, /pathlib/, "the on-topic correction must survive even though it is oldest");
 });
+
+test("an off-topic task never drops corrections from the primer", async () => {
+  // Regression, and the severe one: selecting the tail purely by relevance
+  // silently removed a one-off "never commit secrets" correction whenever the
+  // current task was unrelated. Relevance may ORDER the tail; it must not
+  // SHRINK it below what recency would have shown.
+  const dir = mkdtempSync(join(tmpdir(), "handoff-prime-offtopic-"));
+  mkdirSync(join(dir, ".handoff"), { recursive: true });
+  const paths = resolveHandoffPaths(dir);
+  writeFileSync(paths.task, "# Task\n\nRestyle the landing page hero with flexbox and spacing.\n");
+  writeFileSync(
+    paths.corrections,
+    "# Corrections\n" +
+      mkCorrection("2026-01-01T00:00:00Z", "committed a key", "NEVER commit secrets to the repo") +
+      mkCorrection("2026-02-01T00:00:00Z", "used os.path", "always prefer pathlib") +
+      mkCorrection("2026-03-01T00:00:00Z", "deleted a migration", "never delete migrations"),
+  );
+  writeFileSync(paths.attempts, "# Attempts\n");
+
+  const out = await buildCompactPrimer(paths, "generic");
+  assert.match(out, /NEVER commit secrets/, "a critical one-off must survive an off-topic task");
+});
+
+test("a non-Latin task still yields a populated primer", async () => {
+  // The tokenizer splits on [^a-z0-9]+, so Hebrew/Chinese task text produces
+  // zero tokens and every relevance score is 0. Without a fallback that emptied
+  // the tail for every entry — users writing task.md in their own language got
+  // no corrections at all.
+  const dir = mkdtempSync(join(tmpdir(), "handoff-prime-nonlatin-"));
+  mkdirSync(join(dir, ".handoff"), { recursive: true });
+  const paths = resolveHandoffPaths(dir);
+  writeFileSync(paths.task, "# Task\n\nתקן את הבאג במסד הנתונים לפני השחרור.\n");
+  writeFileSync(
+    paths.corrections,
+    "# Corrections\n" +
+      mkCorrection("2026-03-01T00:00:00Z", "ran a migration bare", "always wrap migrations in a transaction"),
+  );
+  writeFileSync(paths.attempts, "# Attempts\n");
+
+  const out = await buildCompactPrimer(paths, "generic");
+  assert.match(out, /wrap migrations in a transaction/);
+});

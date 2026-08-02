@@ -397,18 +397,35 @@ function renderRanked(raw: string, opts: RenderRankedOpts): string[] {
     out.push(`## ${opts.standingTitle}\n\n${lines}`);
   }
 
-  // Standing rules are the always-applies set. The tail below is where the
-  // task matters: when we know what the agent is working on, entries that
-  // relate to it beat merely-recent ones. Measured on the labelled eval,
-  // task-relevant selection scores F1 0.789 against 0.499 for recency/recurrence
-  // — and fixes the two scenarios the recurrence ranker scored zero on.
+  // Standing rules are the always-applies set. The tail below is where the task
+  // matters: entries relating to what the agent is doing beat merely-recent
+  // ones. Measured on the labelled eval, the shipped combination (relevance
+  // ordering + recency backfill) beats every component: F1 0.685 against 0.611
+  // for recurrence, 0.630 for relevance alone and 0.451 for plain recency.
+  //
+  // But relevance ORDERS the tail — it must never SHRINK it. Selecting purely by
+  // relevance was a real regression: a one-off "never commit secrets" correction
+  // vanished entirely whenever the current task was unrelated, and a task
+  // written in a non-Latin script tokenizes to nothing, which emptied the tail
+  // for every entry. Both are silent losses of exactly the content the primer
+  // exists to carry.
+  //
+  // So: relevance-ranked entries first, then backfill by recency to the same
+  // count the old behaviour would have shown. The floor is "no worse than
+  // recency"; the upside is better ordering and better picks when the task
+  // does overlap.
   const promoted = new Set(ranked.standing.map((s) => s.line));
-  const tail = opts.task
-    ? retrieveFromRaw(raw, opts.task)
-        .map((e) => e.text)
-        .filter((text) => !promoted.has(condenseEntry(text)))
-        .slice(0, opts.recentN)
-    : ranked.recent;
+  const notPromoted = (text: string): boolean => !promoted.has(condenseEntry(text));
+
+  let tail = ranked.recent;
+  if (opts.task) {
+    const byRelevance = retrieveFromRaw(raw, opts.task)
+      .map((e) => e.text)
+      .filter(notPromoted);
+    const seen = new Set(byRelevance);
+    const backfill = ranked.recent.filter((text) => !seen.has(text));
+    tail = [...byRelevance, ...backfill].slice(0, Math.max(opts.recentN, 0));
+  }
 
   if (tail.length > 0) {
     const total = splitEntries(raw).length;

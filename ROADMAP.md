@@ -246,36 +246,53 @@ Three things the tool lacked, in the order that made each decidable.
 
 ### What the eval actually said
 
-Macro-averaged F1 over the 7 scenarios:
+Macro-averaged F1 over 9 labelled scenarios:
 
 | strategy | F1 |
 |---|---|
-| relevance (now shipping) | **0.810** |
-| hybrid (relevance + recurrence) | 0.595 |
-| recurrence (was shipping) | 0.499 |
-| recency (control) | 0.295 |
+| **shipped** (relevance ordering + recency backfill) | **0.685** |
+| recurrence (was shipping) | 0.611 |
+| relevance alone | 0.630 |
+| recency (control) | 0.451 |
 
-Recurrence scored **zero** on two scenarios it structurally cannot handle: a
-critical correction stated once can never resurface when recurrence is the only
-currency, and a large irrelevant cluster fills the cutoff and buries the
-on-topic entry.
+**An earlier version of this table claimed 0.810 vs 0.499 — that was
+overstated and is corrected here.** Adversarial review showed the original
+7-scenario corpus was favourable by construction: every scenario's "relevant"
+entries shared surface vocabulary with the task, which is exactly what a lexical
+scorer keys on, and 77% of the dramatic margin came from the two scenarios the
+algorithm had been written around. Two scenarios covering the regime the corpus
+could not see (`off-topic-critical`, `non-latin-task`) were added, and the
+honest gap is much narrower.
 
-**Four of my own design instincts were measured and rejected or corrected**,
-which is the entire point of building the instrument first:
+**Four design instincts were measured and rejected or corrected**, which is the
+point of building the instrument first:
 
-1. Blending recurrence into the relevance score *hurts* (0.810 → 0.595). Weight
-   ships at 0.
+1. Blending recurrence into the relevance score *hurts*. Weight ships at 0.
 2. An abstention threshold discarded genuine matches before it helped anything.
    `minScore` ships at 0.
-3. Aggressive stemming (`ing`/`es`) *lowered* F1 to 0.769 by over-stemming
-   ("string" → "str"). Only `s`/`ies` ship.
+3. Aggressive stemming (`ing`/`es`) *lowered* F1 by over-stemming ("string" →
+   "str"). Only `s`/`ies` ship.
 4. The v7.5 `PROMOTION_THRESHOLD = 3` was **vindicated** — the sweep puts it on
-   the optimal plateau, with 4+ costing ~38% F1.
+   the optimal plateau.
 
-Unit tests then caught a bug the eval could not: below 5 entries every term
-trivially appears in 100% of the corpus, so the doc-frequency ceiling deleted
-the whole vocabulary and a small project retrieved *nothing*. Every eval
-scenario has 5+ entries, so the corpus was blind to it.
+### Defects adversarial review found after the fact
+
+The eval justified shipping relevance selection; a verifier then showed that
+wiring introduced regressions the corpus was structurally blind to:
+
+- **One-off critical corrections vanished.** Selecting the tail purely by
+  relevance dropped a "never commit secrets" correction whenever the current
+  task was unrelated. Relevance now *orders* the tail and recency *backfills*
+  it, so the floor is "no worse than before".
+- **Non-Latin task text emptied the tail entirely.** The tokenizer splits on
+  `[^a-z0-9]+`, so a task written in Hebrew or Chinese produced zero tokens and
+  every score was 0. Same fix.
+- **Keyword stuffing won retrieval.** `.handoff/` is attacker-authorable, and a
+  correction stuffed with ~45 broad terms out-ranked genuine entries. Scoring
+  now caps contributing terms and damps length harder.
+- **A doc-frequency cliff.** Growing a corpus from 4 to 5 entries could flip
+  retrieval from four hits to none. The hard ceiling is gone; IDF already damps
+  ubiquitous terms continuously.
 
 ### What the eval does not measure
 
