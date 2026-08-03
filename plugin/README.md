@@ -32,9 +32,18 @@ claude --plugin-dir ./plugin
 |---|---|
 | `SessionStart` | injects the primer (also re-fires after a compaction) |
 | `UserPromptSubmit` | re-surfaces standing rules mid-session; silent when there are none |
-| `Stop` | refreshes state and auto-captures corrections + failed attempts |
+| `Stop` | refreshes state; auto-captures corrections + failed attempts (low yield — see note) |
 | `PreCompact` | same auto-capture, before the transcript is compacted |
 | `StopFailure` (`rate_limit`) | logs the rate-limit event and suggests a tool to switch to |
+
+## What auto-capture does not do
+
+Auto-capture is a safety net, not the mechanism. Audited against 395 real user
+messages across 15 sessions it caught a low single-digit number of corrections —
+most real corrections carry no cue word at all, so no lexical rule finds them.
+
+The thing that actually carries context is asking the outgoing agent to write
+the handoff before the session ends, while it still remembers.
 
 ## MCP server
 

@@ -24,12 +24,35 @@ const MEANINGFUL_WORK =
 const REAL_FAILURE =
   /error|failed|not found|cannot|exit code [1-9]|ENOENT|ERR!|Traceback|FAIL/i;
 
-/** Opening cues that mark a user message as a correction. */
+/**
+ * Cues that mark a user message as a correction.
+ *
+ * Anchored to a SENTENCE boundary, not just the start of the message. Requiring
+ * the message to *open* with a cue was measured against 395 real user messages
+ * across 15 sessions and caught **zero** — people lead with context and correct
+ * in the second sentence ("I tried that. No, don't use os.path here.").
+ */
 const CORRECTION_CUE =
-  /^(no\b|nope\b|don'?t\b|do not\b|stop\b|wait\b|actually\b|that'?s (wrong|not|incorrect)|not (what|quite)|you (shouldn'?t|should have)|why did you|undo\b|revert\b|instead\b|I said\b|I asked\b)/i;
+  /(^|[.!?]\s+)(no,|nope\b|don'?t\b|do not\b|stop\b|actually,|that'?s (wrong|not|incorrect)|not what|you (shouldn'?t|should have)|why did you|undo\b|revert\b|instead,|I said\b|I asked\b|never (do|use|say|add)|that was wrong)/i;
 
-/** Max correction message length; longer messages are treated as new asks. */
-const MAX_CORRECTION_CHARS = 240;
+/**
+ * Max correction message length.
+ *
+ * Was 240, which excluded 70% of real messages outright — the measured median
+ * is 425 characters. 1000 covers the bulk without swallowing whole essays.
+ */
+const MAX_CORRECTION_CHARS = 1000;
+
+/** Only look this far in for the cue — a correction states itself early. */
+const CUE_SEARCH_WINDOW = 300;
+
+/**
+ * Text the harness injects into the transcript that is NOT the user speaking:
+ * slash-command expansions, local-command output, hook payloads. Read as user
+ * messages these produce corrections attributed to a human who never typed them.
+ */
+const INJECTED_ARTIFACT =
+  /^\s*<(local-command-caveat|command-name|command-message|command-args|local-command-stdout|user-prompt-submit-hook|system-reminder)\b/i;
 
 /** Max auto entries of each kind written per Stop (keep the freshest). */
 const MAX_PER_STOP = 3;
@@ -89,18 +112,29 @@ export function detectFailedAttempts(session: ParsedSession): FailedAttempt[] {
 /**
  * Detect user messages that correct the agent.
  *
- * A candidate is short, is not the first user message of the session, and opens
- * with a correction cue. `agentDid` is a one-line summary of the assistant turn
- * that preceded the correction.
+ * **Read the limits before trusting this.** Measured against 395 real user
+ * messages over 15 sessions, the original rules (message must be <=240 chars and
+ * must *open* with a cue) caught zero. Widening the window and the length cap
+ * takes that to a handful — still only a few percent, because most real
+ * corrections carry no cue word at all. People correct by explaining:
+ * "But the whole idea is that they didn't turn it on at the beginning" is a
+ * correction, and no lexical rule will ever see it.
+ *
+ * So this is a safety net, not the mechanism. The mechanism is asking the
+ * outgoing agent to write the handoff while it still remembers. Anything that
+ * describes auto-capture as making handoff work "without discipline" is
+ * overselling it.
  */
 export function detectCorrections(session: ParsedSession): Correction[] {
   const out: Correction[] = [];
   for (const turn of session.userTurns) {
     const text = turn.text.trim();
     if (text.length === 0 || text.length > MAX_CORRECTION_CHARS) continue;
+    // Harness-injected blocks are not the user speaking.
+    if (INJECTED_ARTIFACT.test(text)) continue;
     // First user message of the whole session is the task, never a correction.
     if (session.startLine === 0 && turn.index === 0) continue;
-    if (!CORRECTION_CUE.test(text)) continue;
+    if (!CORRECTION_CUE.test(text.slice(0, CUE_SEARCH_WINDOW))) continue;
     out.push({
       agentDid: turn.precedingAssistant ?? "(no preceding assistant turn)",
       userSaid: text,

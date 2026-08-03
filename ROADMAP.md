@@ -212,7 +212,7 @@ itself sat frozen at the 0.4.0 era while the project shipped 0.7.1, still
 listing "publish to npm" as an open loop, and nothing flagged it. A handoff
 artifact that is confidently wrong is worse than none.
 
-- [x] **Auto-capture at session stop.** Make `.handoff/` update itself as a byproduct of working instead of depending on the agent remembering to run `attempt`/`decide`/`correct`. Reuses the marker-parsing engine already in `capture.ts`. Manual commands become the correction path, not the primary path.
+- [x] **Auto-capture at session stop.** Logs failed build/test attempts and user corrections from the transcript. **Later audited against real sessions and found to be low-yield** (0 of 395 messages under the original rules; a low single-digit count after widening them) — most corrections carry no cue word, so lexical detection cannot find them. Kept as a safety net; the mechanism that actually works is asking the outgoing agent to write the handoff. See v8.1.
 - [x] **Staleness detection in `doctor`.** Flag an artifact that has drifted from reality: `meta.updatedAt` far behind the last commit, open loops matching things marked shipped, version strings disagreeing with `package.json`, logging that has gone silent.
 - [x] **Relevance over recency in the primer.** Replace the `lastNEntries(raw, 3)` heuristic with promotion-by-repetition so durable rules survive compaction and one-offs decay. Reuses the theme-clustering already in `patterns.ts`.
 - [x] **`handoff verify`.** Ask a receiving agent to restate task/constraints/do-nots and diff against the source. Today there is no feedback at all on whether a handoff landed.
@@ -299,6 +299,52 @@ wiring introduced regressions the corpus was structurally blind to:
 Retrieval quality only — whether the right entries reach the top of the list.
 Not agent behaviour, not comprehension, not outcomes. The command prints this
 caveat on every run.
+
+---
+
+## v8.1 — auto-capture audited against real sessions (shipped)
+
+Auto-capture shipped in v7.5 described as the thing that keeps `.handoff/`
+current "without discipline". That claim was never tested on real data. It is
+now, and it was wrong.
+
+**Method.** Ran the detectors over 395 real user messages from 15 sessions
+across 5 projects.
+
+**Result.**
+
+| Rule | Corrections caught |
+|---|---|
+| Original: message opens with a cue, <=240 chars | **0** of 395 |
+| Cue anywhere in the first sentence, <=1000 chars | a low single-digit count |
+
+Two causes, both measured: the 240-character cap excluded 70% of messages (the
+real median is **425**), and requiring the message to *open* with a cue matched
+2 messages where a sentence-anchored cue matched far more.
+
+**But the deeper finding is not a tuning problem.** Most real corrections carry
+no cue word at all — "But the whole idea is that they didn't turn it on at the
+beginning" is a correction, and no lexical rule will ever see it. Widening the
+rules moves 0 to a handful, not to useful.
+
+**Changes:**
+
+- [x] Cue matched at a sentence boundary within the first 300 chars, not only at
+  message start.
+- [x] Length cap 240 → 1000.
+- [x] Filter harness-injected blocks (`<local-command-caveat>`, `<command-name>`,
+  hook payloads) — these were being read as user speech and produced corrections
+  attributed to a human who never typed them.
+- [x] **Docs corrected.** README, plugin README and the `install` recipe no
+  longer describe auto-capture as making handoff work "without discipline". It
+  is documented as a low-yield safety net, with the measured numbers stated.
+
+**What actually works**, and is now what the docs lead with: asking the outgoing
+agent to write the handoff before the session ends, while it still has the whole
+session in context. That produced, on a real project, a `corrections.md`
+recording that the user's physical observations had repeatedly outranked agent
+inference — with a standing rule to go measure before arguing. No heuristic
+would ever have extracted that.
 
 ---
 
