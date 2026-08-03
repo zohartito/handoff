@@ -185,6 +185,24 @@ handoff verify --check --file answer.md     # score the agent's restatement
 
 **Read the misses, not the number.** Scoring is word overlap, not comprehension — verified adversarially. It cannot see that a restatement *contradicts* the source (negation is invisible), keyword-stuffed nonsense can score full marks, and a correct answer written in synonyms can score zero. That's why it never sets a failing exit code: it's a checklist, not a verdict.
 
+### `handoff mcp [--cwd <path>]`
+
+Runs an MCP (Model Context Protocol) server over stdio so any MCP-speaking agent — Codex, Cursor, Claude Desktop, Kimi Code, the ChatGPT app — can read and write handoff state natively, mid-conversation, without the clipboard round-trip. See [Integration recipe: MCP server](#integration-recipe-mcp-server) for the client config block. Project root comes from `--cwd`, else the `HANDOFF_PROJECT_ROOT` env var, else the current directory.
+### `handoff evaluate [--strategy <name>] [--compare] [--sweep] [--json] [--k <n>] [--dir <path>]`
+
+Developer tool that makes the relevance-ranking thresholds decidable by measurement instead of reasoning. It is a **deterministic retrieval eval**: over a set of labelled fixture scenarios (`tests/fixtures/eval/`), it asks whether the ranker surfaces the corrections/attempts a human marked relevant to each task, and reports precision, recall, F1, and MRR — no LLM, no API key, offline and reproducible.
+
+```bash
+handoff evaluate                 # score the shipping "recurrence" ranking, per scenario
+handoff evaluate --compare       # recurrence vs a plain recency control, side by side
+handoff evaluate --sweep         # sweep PROMOTION_THRESHOLD 2..6 and report F1 for each
+handoff evaluate --json          # machine-readable output
+```
+
+The `recurrence` strategy calls the real `rankEntries` (the shipping code is the baseline, not a copy); `recency` is a last-N control. On the current corpus recurrence beats recency on every metric, and the sweep puts the shipped `PROMOTION_THRESHOLD = 3` on the optimal F1 plateau (raising it to 4+ discards genuine three-time themes).
+
+**What it measures — and does not.** This is retrieval quality: did the right entries reach the top of the list. It does **not** measure agent behaviour, comprehension, or outcomes, and the shipping ranker is task-blind (it orders by recurrence and recency, never reading the task text). The output states this on every run. See `tests/fixtures/eval/README.md` for the label format.
+
 ## Staying current without discipline
 
 `.handoff/` is only useful if it reflects reality, and relying on the agent to run `attempt`/`decide`/`correct` by hand does not hold up — in this repo's own history, 14 entries were logged across two days and then nothing for three and a half months across 13 commits. Three mechanisms close that gap:
@@ -312,6 +330,61 @@ Log significant events with `handoff attempt`, `handoff decide`, and
 ```
 
 Codex and Gemini follow the same pattern: `handoff switch codex`, `handoff switch gemini`. Native integrations will land as those tools expose suitable extension points.
+
+## Integration recipe: MCP server
+
+`handoff switch` and `handoff ingest` cover tools with on-disk session logs. For tools that store nothing readable (the ChatGPT app) or a format handoff has no ingest adapter for (Kimi Code), the clipboard primer used to be the only path. `handoff mcp` replaces that with a native one: a stdio [Model Context Protocol](https://modelcontextprotocol.io) server (JSON-RPC 2.0, protocol version `2025-06-18`) that any MCP-speaking agent can call mid-conversation. It is hand-rolled — no `@modelcontextprotocol/sdk`, no new dependency; `commander` is still the only runtime dependency.
+
+It exposes six tools:
+
+| Tool | Kind | Purpose |
+| --- | --- | --- |
+| `handoff_context` | read | The compact primer: task, open loops, standing corrections, recent failed attempts. |
+| `handoff_open_loops` | read | The project's unfinished work. |
+| `handoff_status` | read | Which `.handoff/` files are populated vs template, with sizes + snapshot time (staleness signal). |
+| `handoff_log_correction` | write | Record that the user corrected the agent. |
+| `handoff_log_attempt` | write | Record a failed approach so no future session repeats it. |
+| `handoff_log_decision` | write | Record a decision and its reasoning. |
+
+The server operates on one project root, taken from `--cwd`, else `HANDOFF_PROJECT_ROOT`, else the process working directory. Point it at the project you're handing off.
+
+**Claude Desktop** — add to `claude_desktop_config.json` (macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`; Windows: `%APPDATA%\Claude\claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "handoff": {
+      "command": "npx",
+      "args": ["-y", "@zohartito/handoff", "mcp"],
+      "env": { "HANDOFF_PROJECT_ROOT": "/absolute/path/to/your/project" }
+    }
+  }
+}
+```
+
+**Codex** — add to `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.handoff]
+command = "npx"
+args = ["-y", "@zohartito/handoff", "mcp"]
+env = { HANDOFF_PROJECT_ROOT = "/absolute/path/to/your/project" }
+```
+
+**Cursor** — add to `.cursor/mcp.json` (project) or `~/.cursor/mcp.json` (global):
+
+```json
+{
+  "mcpServers": {
+    "handoff": {
+      "command": "npx",
+      "args": ["-y", "@zohartito/handoff", "mcp", "--cwd", "/absolute/path/to/your/project"]
+    }
+  }
+}
+```
+
+If `handoff` is installed globally (`npm i -g @zohartito/handoff`), replace `"command": "npx"` / `"args": ["-y", "@zohartito/handoff", "mcp", ...]` with `"command": "handoff"` / `"args": ["mcp", ...]`.
 
 ## Keyboard shortcuts and tray integration
 

@@ -1,0 +1,6 @@
+{
+  "description": "The task is written in Hebrew. The shared tokenizer splits on [^a-z0-9]+, so a non-Latin task produces ZERO tokens and every relevance score is 0. A retriever that selects purely on relevance returns nothing at all here, meaning users who write task.md in their own language get no corrections in the primer, ever. The correct behaviour is to fall back rather than return empty, so both corrections are labelled relevant.",
+  "k": 2,
+  "relevant": ["2026-03-01T09:00:00Z", "2026-03-08T09:00:00Z"],
+  "irrelevant": []
+}

@@ -1,0 +1,14 @@
+{
+  "description": "Python file-I/O task. The recurring 'prefer pathlib over os.path' rule was stated three times months ago and is directly relevant to writing a new I/O module. The recent one-off corrections (docs, tool versions, premature abstraction) are not relevant here. A good retriever should surface the old pathlib theme over the fresher but irrelevant one-offs.",
+  "k": 4,
+  "relevant": [
+    "2026-01-03T09:12:00Z",
+    "2026-01-08T14:03:00Z",
+    "2026-01-15T11:20:00Z"
+  ],
+  "irrelevant": [
+    "2026-07-11T10:00:00Z",
+    "2026-07-14T16:30:00Z",
+    "2026-07-18T09:45:00Z"
+  ]
+}

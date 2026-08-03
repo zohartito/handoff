@@ -39,6 +39,15 @@ export interface RankedEntries {
   standing: StandingRule[];
   /** Full entries, most recent last, with promoted-cluster members removed. */
   recent: string[];
+  /**
+   * Only populated when `opts.withIds` is set. For each rule in `standing`
+   * (same order), the entry ids (`## <timestamp>` headers) of every member of
+   * that rule's cluster, in original chronological order. Lets a caller map a
+   * promoted rule back to the raw entries it summarises — the retrieval eval
+   * uses this to score which entry ids the ranker surfaces. Left off by default
+   * so the common return shape stays `{ standing, recent }`.
+   */
+  standingIds?: string[][];
 }
 
 export interface RankOpts {
@@ -47,6 +56,18 @@ export interface RankOpts {
   promotionThreshold?: number;
   /** Identifies machine-captured entries. Defaults to reading a `source: auto` marker. */
   isAuto?: (entry: string) => boolean;
+  /** Attach `standingIds` (cluster membership) to the result. Off by default. */
+  withIds?: boolean;
+}
+
+/**
+ * The stable id of an entry: the text of its `## <ISO-timestamp>` header.
+ * `splitEntries` keeps that header line at the head of each entry, so this is a
+ * pure read. Returns null for a header-less entry (the `---`-only fallback).
+ */
+export function entryId(entry: string): string | null {
+  const m = entry.match(/^##\s+(.+?)\s*$/m);
+  return m ? m[1]!.trim() : null;
 }
 
 /**
@@ -263,7 +284,9 @@ export function rankEntries(raw: string, opts: RankOpts): RankedEntries {
   });
 
   const promotedIdx = new Set<number>();
-  const standing: StandingRule[] = [];
+  // Rule paired with its cluster's entry ids, so the two stay aligned through
+  // the sort/cap below.
+  const built: Array<{ rule: StandingRule; ids: string[] }> = [];
 
   for (const [, idxs] of clusters) {
     if (idxs.length < threshold) continue;
@@ -278,12 +301,15 @@ export function rankEntries(raw: string, opts: RankOpts): RankedEntries {
     const line = truncateLine(condenseEntry(all[repIdx]!));
     if (!line) continue;
 
-    standing.push({ line, count: idxs.length });
+    const ids = idxs.map((i) => entryId(all[i]!)).filter((id): id is string => id !== null);
+    built.push({ rule: { line, count: idxs.length }, ids });
     for (const i of idxs) promotedIdx.add(i);
   }
 
   // Strongest themes first; stable tie-break on text keeps output deterministic.
-  standing.sort((a, b) => b.count - a.count || a.line.localeCompare(b.line));
+  built.sort((a, b) => b.rule.count - a.rule.count || a.rule.line.localeCompare(b.rule.line));
+  const capped = built.slice(0, opts.maxStanding);
+  const standing = capped.map((b) => b.rule);
 
   // The newest entry is always shown in full, even when its theme was promoted.
   // Promotion replaces a whole cluster with one condensed line from a single
@@ -298,5 +324,7 @@ export function rankEntries(raw: string, opts: RankOpts): RankedEntries {
     .slice(-Math.max(opts.recentN, opts.recentN === 0 ? 0 : 1))
     .map(({ entry }) => entry);
 
-  return { standing: standing.slice(0, opts.maxStanding), recent };
+  const result: RankedEntries = { standing, recent };
+  if (opts.withIds) result.standingIds = capped.map((b) => b.ids);
+  return result;
 }

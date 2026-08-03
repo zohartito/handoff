@@ -72,16 +72,33 @@ Tiny follow-ups caught during v1.5 ship. None block v3; all low-effort.
 
 ---
 
-## v2 — Cursor MCP server (CUT)
+## v2 — Cursor MCP server (CUT → REVERSED in v8)
 
 Originally planned: expose `.handoff/` as an MCP server so Cursor agents could
 read/write handoff state natively instead of via files.
 
-**Cut because** `handoff switch` + `handoff ingest --from cursor` already give
-Cursor a no-friction path via SQLite + clipboard. MCP would add a moving part
-and a second surface area for bugs without unlocking a real capability the
-file-based path lacks. Revisit only if Cursor's file-based workflow genuinely
-falls short.
+**Cut (April)** because `handoff switch` + `handoff ingest --from cursor`
+already gave Cursor a no-friction path via SQLite + clipboard. MCP would add a
+moving part without unlocking a capability the file-based path lacked — *for
+Cursor*.
+
+**Cut reversed (v8).** The "clipboard + ingest is enough" reasoning only ever
+held for tools we have an adapter for. It has gone stale:
+
+- **Kimi Code** stores sessions in a format we have no `ingest --from` adapter
+  for, so there's no SQLite path to read.
+- **The ChatGPT app** stores nothing locally readable at all.
+
+For both, the clipboard primer is the *only* path today — a pre-MCP, manual
+copy-paste interface. An MCP server gives any MCP-speaking agent (Codex,
+Cursor, Claude Desktop, Kimi Code, the ChatGPT app) native mid-conversation
+read/write access to handoff state, with no clipboard round-trip.
+
+Shipped in v8 as `handoff mcp` (a stdio JSON-RPC 2.0 server, hand-rolled with
+**no new dependency** — the zero-dep property is preserved). Tools:
+`handoff_context`, `handoff_open_loops`, `handoff_log_correction`,
+`handoff_log_attempt`, `handoff_log_decision`, `handoff_status`. See the README
+"MCP server" section for the client config block.
 
 ---
 
@@ -205,6 +222,83 @@ artifact that is confidently wrong is worse than none.
 - [x] **Adversarial pass.** Two verifiers attacked ranking and verify; every real defect they found is fixed and regression-tested. Notably: the ubiquity ceiling was dropping the most-repeated theme at >=5 varied-wording entries, compact primers had no budget enforcement (measured 7128 chars against a 2000 cap), and `verify` scored a correctly-formatted numbered-list answer as zero because the tokenizer skipped list lines.
 - [x] **Dogfood loop.** session -> Stop hook auto-capture -> primer -> verify -> mid-session re-injection, run end to end on a scratch project. Found two further defects (block-form user messages invisible to capture; auto entries labelled `"auto"`), both fixed.
 - [x] 232 -> 234 tests (v7.5 added ~70 across ranking, verify, auto-capture, staleness, re-injection and switch).
+
+---
+
+## v8 — measurable, native, installable (in progress)
+
+Three things the tool lacked, in the order that made each decidable.
+
+- [x] **Retrieval eval (`handoff evaluate`).** The thresholds shipped in v7.5
+  were chosen by reasoning, and nothing measured whether the ranking helped at
+  all. This is a deterministic, offline information-retrieval eval over 7
+  labelled scenarios: does the ranker surface the entries a human marked
+  relevant to each task? No LLM, no API key, reproducible. It exists so the
+  rest of this section is decided by numbers.
+- [x] **MCP server (`handoff mcp`).** Reverses the v2 cut (see above). Six
+  tools over hand-rolled stdio JSON-RPC 2.0 — **no new dependency**, so the
+  zero-dep property survives.
+- [x] **Task-relevant retrieval.** Replaces recency/recurrence for the primer
+  tail. Standing rules remain the always-applies set.
+- [x] **Plugin packaging.** `plugin/` + `.claude-plugin/marketplace.json`.
+  Installation no longer depends on hand-editing `~/.claude/settings.json` —
+  the failure that left hooks registered in exactly one repo.
+
+### What the eval actually said
+
+Macro-averaged F1 over 9 labelled scenarios:
+
+| strategy | F1 |
+|---|---|
+| **shipped** (relevance ordering + recency backfill) | **0.685** |
+| recurrence (was shipping) | 0.611 |
+| relevance alone | 0.630 |
+| recency (control) | 0.451 |
+
+**An earlier version of this table claimed 0.810 vs 0.499 — that was
+overstated and is corrected here.** Adversarial review showed the original
+7-scenario corpus was favourable by construction: every scenario's "relevant"
+entries shared surface vocabulary with the task, which is exactly what a lexical
+scorer keys on, and 77% of the dramatic margin came from the two scenarios the
+algorithm had been written around. Two scenarios covering the regime the corpus
+could not see (`off-topic-critical`, `non-latin-task`) were added, and the
+honest gap is much narrower.
+
+**Four design instincts were measured and rejected or corrected**, which is the
+point of building the instrument first:
+
+1. Blending recurrence into the relevance score *hurts*. Weight ships at 0.
+2. An abstention threshold discarded genuine matches before it helped anything.
+   `minScore` ships at 0.
+3. Aggressive stemming (`ing`/`es`) *lowered* F1 by over-stemming ("string" →
+   "str"). Only `s`/`ies` ship.
+4. The v7.5 `PROMOTION_THRESHOLD = 3` was **vindicated** — the sweep puts it on
+   the optimal plateau.
+
+### Defects adversarial review found after the fact
+
+The eval justified shipping relevance selection; a verifier then showed that
+wiring introduced regressions the corpus was structurally blind to:
+
+- **One-off critical corrections vanished.** Selecting the tail purely by
+  relevance dropped a "never commit secrets" correction whenever the current
+  task was unrelated. Relevance now *orders* the tail and recency *backfills*
+  it, so the floor is "no worse than before".
+- **Non-Latin task text emptied the tail entirely.** The tokenizer splits on
+  `[^a-z0-9]+`, so a task written in Hebrew or Chinese produced zero tokens and
+  every score was 0. Same fix.
+- **Keyword stuffing won retrieval.** `.handoff/` is attacker-authorable, and a
+  correction stuffed with ~45 broad terms out-ranked genuine entries. Scoring
+  now caps contributing terms and damps length harder.
+- **A doc-frequency cliff.** Growing a corpus from 4 to 5 entries could flip
+  retrieval from four hits to none. The hard ceiling is gone; IDF already damps
+  ubiquitous terms continuously.
+
+### What the eval does not measure
+
+Retrieval quality only — whether the right entries reach the top of the list.
+Not agent behaviour, not comprehension, not outcomes. The command prints this
+caveat on every run.
 
 ---
 
