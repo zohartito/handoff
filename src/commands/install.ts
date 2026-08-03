@@ -27,7 +27,8 @@ Four hooks:
   (only when the project has a \`.handoff/\` directory; silent no-op otherwise)
 - \`Stop\` → \`handoff save\` refreshes the environment snapshot on session end
   AND auto-captures failed build/test attempts + user corrections from the
-  session transcript (so logging happens even when the agent forgets to)
+  session transcript (a low-yield safety net — ask the outgoing agent to
+  write the handoff explicitly; that is what actually carries corrections)
 - \`PreCompact\` (optional) → runs the same auto-capture before Claude Code
   compacts the transcript, so nothing is lost to compaction
 - \`StopFailure\` with \`rate_limit\` matcher → logs the rate-limit event and

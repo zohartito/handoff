@@ -106,7 +106,7 @@ Prints the exact integration instructions for the named tool — the `.claude/se
 
 ### `handoff hook <session-start|user-prompt-submit|stop|pre-compact|rate-limit>`
 
-Internal. Called by the Claude Code hook system. Do not invoke directly unless you're debugging the hook wiring. `stop` and `pre-compact` read Claude Code's JSON payload on stdin (including `transcript_path`) and, on top of refreshing the environment snapshot, **auto-capture** failed build/test attempts and user corrections straight from the session transcript — so `attempts.md` and `corrections.md` stay populated even when the agent forgets to log by hand. Auto-capture is best-effort and can never break a session; it dedupes via a per-session cursor plus content hashes stored in `.handoff/.capture-state.json`, tags entries with `**source:** auto`, and never writes decisions or a transcript.
+Internal. Called by the Claude Code hook system. Do not invoke directly unless you're debugging the hook wiring. `stop` and `pre-compact` read Claude Code's JSON payload on stdin (including `transcript_path`) and, on top of refreshing the environment snapshot, **auto-capture** failed build/test attempts and user corrections from the session transcript. Measured on real sessions this catches only a few percent of corrections (see [Keeping `.handoff/` current](#keeping-handoff-current)) — it supplements an explicit end-of-session handoff, it does not replace one. Auto-capture is best-effort and can never break a session; it dedupes via a per-session cursor plus content hashes stored in `.handoff/.capture-state.json`, tags entries with `**source:** auto`, and never writes decisions or a transcript.
 
 ### `handoff ingest --from <claude-code|cursor|codex|gemini|paste> [--session <id>] [--list] [--out <path>] [--project <path>]`
 
@@ -203,15 +203,21 @@ The `recurrence` strategy calls the real `rankEntries` (the shipping code is the
 
 **What it measures — and does not.** This is retrieval quality: did the right entries reach the top of the list. It does **not** measure agent behaviour, comprehension, or outcomes, and the shipping ranker is task-blind (it orders by recurrence and recency, never reading the task text). The output states this on every run. See `tests/fixtures/eval/README.md` for the label format.
 
-## Staying current without discipline
+## Keeping `.handoff/` current
 
-`.handoff/` is only useful if it reflects reality, and relying on the agent to run `attempt`/`decide`/`correct` by hand does not hold up — in this repo's own history, 14 entries were logged across two days and then nothing for three and a half months across 13 commits. Three mechanisms close that gap:
+`.handoff/` is only useful if it reflects reality. Relying on an agent to run `attempt`/`decide`/`correct` by hand does not hold up — in this repo's own history, 14 entries were logged across two days and then nothing for three and a half months across 13 commits.
 
-- **Auto-capture.** The `Stop` and `PreCompact` hooks read the session transcript and log failed build/test attempts and user corrections themselves, tagged `**source:** auto`. Conservative by design (only `Bash` failures that look like real work; only short user messages that open with a correction cue), deduped by a per-session cursor plus content hashes, capped at 3 of each per session, and best-effort so it can never break a session.
-- **Relevance ranking.** Corrections that recur across three or more entries are promoted to a condensed "Standing rules" block above the recent tail, so a rule you've repeated for months isn't pushed out by three fresh one-offs. Auto-captured entries need a higher bar (5) and a theme no human ever confirmed doesn't promote at all.
-- **Mid-session re-injection.** SessionStart re-fires after a compaction (`source: "compact"`), so the full primer already returns then. The optional `UserPromptSubmit` hook covers ordinary drift *between* compactions by re-surfacing the standing rules only — and stays completely silent when nothing has recurred, so the common case costs nothing.
+**The mechanism that actually works is asking the outgoing agent to write the handoff before the session ends.** It still has the whole session in context; nothing automated comes close. One message, at the end:
 
-And `handoff doctor` now flags an artifact that has drifted out of sync: commits landing with no `handoff save`, a `task.md` naming a version behind `package.json`, or logs that have gone quiet across many commits. All advisory — staleness never changes the exit code.
+> Before we lose this session: run `handoff init` if needed, then write the handoff — task, progress, open loops, and especially corrections (things I told you that a fresh agent would get wrong). Log decisions and failed attempts through the CLI. Commit it.
+
+Everything below is a **safety net under that**, not a replacement for it.
+
+- **Auto-capture — a weak net, and measured as such.** The `Stop` and `PreCompact` hooks read the session transcript and log failed build/test attempts and user corrections, tagged `**source:** auto`. Audited against 395 real user messages across 15 sessions, the original rules caught **zero**; after widening them it catches a low single-digit number. That is not a bug to be tuned away — most real corrections carry no cue word at all ("But the whole idea is that they didn't turn it on at the beginning" is a correction, and no lexical rule will see it). Treat auto-capture as a bonus when it fires, never as the reason state stays current.
+- **Relevance ranking.** Corrections that recur across three or more entries are promoted to a condensed "Standing rules" block above the recent tail, so a rule you've repeated for months isn't pushed out by three fresh one-offs. Auto-captured entries need a higher bar (5), and a theme no human ever confirmed doesn't promote at all.
+- **Mid-session re-injection.** SessionStart re-fires after a compaction (`source: "compact"`), so the full primer already returns then. The optional `UserPromptSubmit` hook covers ordinary drift *between* compactions by re-surfacing standing rules only — and stays silent when nothing has recurred, so the common case costs nothing.
+
+And `handoff doctor` flags an artifact that has drifted out of sync: commits landing with no `handoff save`, a `task.md` naming a version behind `package.json`, or logs gone quiet across many commits. All advisory — staleness never changes the exit code.
 
 ## File format
 
@@ -286,7 +292,7 @@ Claude Code has the deepest integration — hooks in `.claude/settings.json` (th
 ```
 
 - `SessionStart` injects the primer automatically — no paste required.
-- `Stop` refreshes `environment.md` **and** auto-captures failed build/test attempts + user corrections from the session transcript, so `attempts.md` / `corrections.md` fill themselves in even when the agent forgets to log by hand. Auto-captured entries are tagged `**source:** auto` and deduped via `.handoff/.capture-state.json`.
+- `Stop` refreshes `environment.md` **and** auto-captures failed build/test attempts + user corrections from the session transcript, a low-yield supplement to writing the handoff explicitly at session end, not a substitute for it. Auto-captured entries are tagged `**source:** auto` and deduped via `.handoff/.capture-state.json`.
 - `PreCompact` (optional) runs the same auto-capture before Claude Code compacts the transcript, so nothing is lost to compaction.
 - `StopFailure` with the `rate_limit` matcher logs the event and prints a swap-tool nudge.
 
