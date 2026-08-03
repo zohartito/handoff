@@ -225,7 +225,7 @@ artifact that is confidently wrong is worse than none.
 
 ---
 
-## v8 — measurable, native, installable (in progress)
+## v8 — measurable, native, installable (shipped, 0.9.0)
 
 Three things the tool lacked, in the order that made each decidable.
 
