@@ -302,7 +302,7 @@ caveat on every run.
 
 ---
 
-## v8.1 — auto-capture audited against real sessions (shipped)
+## v8.1 — auto-capture audited against real sessions (shipped, 0.9.1)
 
 Auto-capture shipped in v7.5 described as the thing that keeps `.handoff/`
 current "without discipline". That claim was never tested on real data. It is
