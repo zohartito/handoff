@@ -46,8 +46,13 @@ Do not run `handoff doctor`: it is disabled with every other product command.
 ## Package boundary
 
 The published package exports only a side-effect-free freeze/removal helper and
-the `handoff` refusal-only CLI. Deep package imports are blocked by the
-`exports` map, and operational modules are omitted from the package tarball.
+the `handoff` refusal-only CLI. The release build compiles only those files;
+historical state-processing modules remain source-only for forensics and test
+coverage. Deep package imports are blocked by the `exports` map, and
+operational modules are omitted from the package tarball.
+
+CI, secret scanning, and agentic PR review are security-disabled pending owner
+review of immutable action commit SHAs, permissions, and event scope.
 
 ## Existing data
 

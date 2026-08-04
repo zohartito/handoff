@@ -19,12 +19,14 @@
   ],
   "scripts": {
     "dev": "tsx src/cli.ts",
-    "build": "tsc",
+    "build": "node scripts/build-release.mjs",
+    "check:release-surface": "node scripts/check-release-surface.mjs",
     "start": "node dist/cli.js",
     "lint": "tsc --noEmit && tsc -p tsconfig.test.json --noEmit",
-    "test": "tsc -p tsconfig.test.json && node scripts/run-tests.mjs",
+    "test": "npm run build && tsc -p tsconfig.test.json && node scripts/run-tests.mjs",
     "test:watch": "tsc -p tsconfig.test.json && node scripts/run-tests.mjs --watch",
-    "prepublishOnly": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && npm run build"
+    "prepack": "node scripts/build-release.mjs",
+    "prepublishOnly": "node scripts/check-release-surface.mjs"
   },
   "keywords": [
     "ai",
