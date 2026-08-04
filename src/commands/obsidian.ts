@@ -1,6 +1,6 @@
 import { basename, resolve } from "node:path";
 import { resolveHandoffPaths } from "../format/paths.js";
-import { exists, readOrEmpty, writeFileSafe, ensureDir } from "../util/fs.js";
+import { readOrEmpty, readFileConfined, ensureDirConfined, writeFileConfined } from "../util/fs.js";
 import { splitEntries } from "./prime.js";
 
 export interface ObsidianOpts {
@@ -55,9 +55,9 @@ export async function obsidian(opts: ObsidianOpts = {}): Promise<ObsidianCounts>
   const dailyDir = resolve(vault, "Daily");
   const decisionsDir = resolve(vault, "Decisions");
   const rulesDir = resolve(vault, "Rules");
-  await ensureDir(dailyDir);
-  await ensureDir(decisionsDir);
-  await ensureDir(rulesDir);
+  await ensureDirConfined(vault, dailyDir);
+  await ensureDirConfined(vault, decisionsDir);
+  await ensureDirConfined(vault, rulesDir);
 
   // 1. Daily summary.
   const dailyPath = resolve(dailyDir, `${date}.md`);
@@ -78,7 +78,7 @@ export async function obsidian(opts: ObsidianOpts = {}): Promise<ObsidianCounts>
     const prefix = existingDaily
       ? existingDaily.endsWith("\n") ? existingDaily : existingDaily + "\n"
       : `# ${date}\n`;
-    await writeFileSafe(dailyPath, prefix + "\n" + block);
+    await writeFileConfined(vault, dailyPath, prefix + "\n" + block);
     dailyWritten = 1;
   }
 
@@ -88,7 +88,7 @@ export async function obsidian(opts: ObsidianOpts = {}): Promise<ObsidianCounts>
     const decSlug = slugifyEntry(entry);
     const file = resolve(decisionsDir, `${date}_${slug}_${decSlug}.md`);
     const body = renderDecisionNote({ projectPath, slug, date, entry });
-    const wrote = await writeIfChanged(file, body);
+    const wrote = await writeIfChanged(vault, file, body);
     if (wrote) decisionsWritten += 1;
     else skipped += 1;
   }
@@ -99,7 +99,7 @@ export async function obsidian(opts: ObsidianOpts = {}): Promise<ObsidianCounts>
     const corrSlug = slugifyEntry(entry);
     const file = resolve(rulesDir, `${slug}__${corrSlug}.md`);
     const body = renderRuleNote({ projectPath, slug, entry });
-    const wrote = await writeIfChanged(file, body);
+    const wrote = await writeIfChanged(vault, file, body);
     if (wrote) correctionsWritten += 1;
     else skipped += 1;
   }
@@ -229,17 +229,23 @@ function renderRuleNote(args: {
  * it and append a "Last synced: <ts>" footer. Returns true if anything was
  * written, false if the existing content already matched.
  */
-async function writeIfChanged(path: string, body: string): Promise<boolean> {
-  if (await exists(path)) {
-    const current = await readOrEmpty(path);
+async function writeIfChanged(root: string, path: string, body: string): Promise<boolean> {
+  try {
+    const current = await readFileConfined(root, path);
     if (stripSyncedFooter(current).trim() === body.trim()) {
       return false;
     }
     const withFooter = `${body.trimEnd()}\n\n_Last synced: ${new Date().toISOString()}_\n`;
-    await writeFileSafe(path, withFooter);
+    await writeFileConfined(root, path, withFooter);
     return true;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
+      // A linked/non-regular target is an unsafe vault configuration, not an
+      // absent note that may be silently replaced.
+      if (err instanceof Error && /linked|non-regular|escapes/.test(err.message)) throw err;
+    }
   }
-  await writeFileSafe(path, body);
+  await writeFileConfined(root, path, body);
   return true;
 }
 

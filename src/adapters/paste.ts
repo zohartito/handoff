@@ -3,7 +3,8 @@ import { spawn } from "node:child_process";
 import { platform } from "node:os";
 import { join } from "node:path";
 import { resolveHandoffPaths } from "../format/paths.js";
-import { writeFileSafe } from "../util/fs.js";
+import { readOrEmpty, writeFileSafe } from "../util/fs.js";
+import { resolveTrustedExecutable } from "../util/executable.js";
 import {
   renderMarkdown,
   emitOutput,
@@ -99,12 +100,8 @@ export async function buildPasteSummary(opts: {
 }): Promise<string | null> {
   const paths = resolveHandoffPaths(opts.project);
   const transcriptMd = join(paths.dir, "transcript.md");
-  let text: string;
-  try {
-    text = await fs.readFile(transcriptMd, "utf8");
-  } catch {
-    return null;
-  }
+  const text = await readOrEmpty(transcriptMd);
+  if (!text) return null;
   if (text.trim().length === 0) return null;
   return renderPasteSummary({ text, source: transcriptMd });
 }
@@ -183,10 +180,12 @@ function clipReadCommands(): Array<[string, string[]]> {
   ];
 }
 
-function tryReadClip(cmd: string, args: string[]): Promise<string | null> {
+async function tryReadClip(cmd: string, args: string[]): Promise<string | null> {
+  const executable = await resolveTrustedExecutable(cmd, process.cwd());
+  if (!executable) return null;
   return new Promise((resolvePromise) => {
     try {
-      const child = spawn(cmd, args, { stdio: ["ignore", "pipe", "ignore"] });
+      const child = spawn(executable, args, { stdio: ["ignore", "pipe", "ignore"], shell: false });
       const chunks: Buffer[] = [];
       child.stdout.on("data", (c) => chunks.push(Buffer.from(c)));
       child.on("error", () => resolvePromise(null));

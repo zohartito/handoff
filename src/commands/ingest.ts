@@ -36,12 +36,17 @@ type AnyEvent = Record<string, any>;
  */
 export async function ingest(opts: IngestOpts): Promise<void> {
   const cwd = opts.cwd ?? process.cwd();
-  const project = opts.project ? resolve(opts.project) : cwd;
-
   if (opts.all && opts.from) {
     console.error(
       `--all and --from are mutually exclusive. Use one or the other.`,
     );
+    process.exitCode = 1;
+    return;
+  }
+
+  const project = await canonicalProjectIdentity(opts.project ? resolve(opts.project) : cwd);
+  if (!project) {
+    console.error("cannot canonicalize project path; refusing cross-project session discovery");
     process.exitCode = 1;
     return;
   }
@@ -101,19 +106,30 @@ export async function ingest(opts: IngestOpts): Promise<void> {
   process.exitCode = 1;
 }
 
+/** Resolve project aliases before using them as a session/privacy boundary.
+ * If a supplied path vanished, fall back to its lexical absolute form and
+ * fail closed when no session reports that exact value. */
+async function canonicalProjectIdentity(path: string): Promise<string | null> {
+  try {
+    return await fs.realpath(path);
+  } catch {
+    return null;
+  }
+}
+
 async function ingestClaudeCode(opts: IngestOpts, project: string): Promise<void> {
   const projectDirs = await findClaudeProjectDirs(project);
   if (projectDirs.length === 0) {
     console.error(
       `no Claude Code sessions found for ${project}\n` +
-        `(looked in ~/.claude/projects/ for folders matching this path or its parents)`,
+      `(looked in ~/.claude/projects/ for the exact project identity)`,
     );
     process.exitCode = 1;
     return;
   }
 
   if (opts.list) {
-    const summaries = await listSessionsAcross(projectDirs);
+    const summaries = (await listSessionsAcross(projectDirs)).filter((s) => cwdMatchesProject(s.cwd, project));
     printSessionList(summaries, projectDirs);
     return;
   }
@@ -121,7 +137,7 @@ async function ingestClaudeCode(opts: IngestOpts, project: string): Promise<void
   const sessionId = opts.session ?? "latest";
   const sessionFile = await resolveSessionFileAcross(projectDirs, sessionId, project);
   if (!sessionFile) {
-    const summaries = await listSessionsAcross(projectDirs);
+    const summaries = (await listSessionsAcross(projectDirs)).filter((s) => cwdMatchesProject(s.cwd, project));
     const ids = summaries.slice(0, 5).map((s) => s.id.slice(0, 8)).join(", ");
     console.error(
       `session not found: ${sessionId}\n` +
@@ -259,28 +275,15 @@ function encodeProjectPath(projectPath: string): string {
 }
 
 /**
- * Find ALL Claude Code project dirs that could contain sessions for this
- * project — the direct match plus any existing parent-path matches.
- *
- * Why aggregate: Claude Code sometimes logs a session's cwd as the parent
- * dir (when you run `claude` from the parent and navigate inside), so the
- * history for `C:\Users\me\foo` can live under `C--Users-me` OR
- * `C--Users-me-foo`. We want both.
+ * Find the one Claude Code storage directory for this exact project.  Parent
+ * stores are deliberately not searched: their sessions may belong to another
+ * checkout and importing them would cross a project privacy boundary.
  */
 async function findClaudeProjectDirs(projectPath: string): Promise<string[]> {
   const base = join(homedir(), ".claude", "projects");
   if (!(await exists(base))) return [];
-  const dirs: string[] = [];
-  let p = projectPath;
-  for (let i = 0; i < 8; i++) {
-    const enc = encodeProjectPath(p);
-    const candidate = join(base, enc);
-    if (await exists(candidate)) dirs.push(candidate);
-    const parent = p.replace(/[\\/][^\\/]+$/, "");
-    if (!parent || parent === p) break;
-    p = parent;
-  }
-  return dirs;
+  const candidate = join(base, encodeProjectPath(projectPath));
+  return (await exists(candidate)) ? [candidate] : [];
 }
 
 export type SessionSummary = {
@@ -382,10 +385,9 @@ async function resolveSessionFile(
 /**
  * Platform-conditional path normalization for comparison.
  *
- * On Windows + macOS the default FS is case-insensitive (though case-preserving
- * on HFS+/APFS) — we lowercase so `C:\Foo` and `c:\foo` compare equal.
- * On Linux the FS is case-sensitive — `/Users/foo` and `/Users/Foo` are two
- * different directories; we must not collapse them.
+ * Do not lowercase a lexical fallback: macOS volumes can be case-sensitive.
+ * Realpath is required before automatic discovery; this pure helper remains a
+ * strict string equality guard for already-canonical values.
  *
  * Exported as a pure function so tests can exercise both branches without
  * stubbing `os.platform()` globally.
@@ -394,9 +396,7 @@ export function normalizeForCompare(
   p: string,
   plat: NodeJS.Platform = platform(),
 ): string {
-  const caseInsensitive = plat === "win32" || plat === "darwin";
   let n = p.replace(/[\\/]+$/, "").replace(/\\/g, "/");
-  if (caseInsensitive) n = n.toLowerCase();
   return n;
 }
 
@@ -408,7 +408,7 @@ export function cwdMatchesProject(
   if (!cwd) return false;
   const c = normalizeForCompare(cwd, plat);
   const p = normalizeForCompare(projectPath, plat);
-  return c === p || c.startsWith(p + "/");
+  return c === p;
 }
 
 async function resolveSessionFileAcross(
@@ -418,17 +418,20 @@ async function resolveSessionFileAcross(
 ): Promise<string | null> {
   if (sessionId === "latest") {
     const sessions = await listSessionsAcross(projectDirs);
-    // Prefer sessions whose logged cwd actually matches the requested project.
-    // Without this filter, a parent-dir session (newer but wrong scope) wins.
+    // A session must declare the exact project identity.  A parent or child
+    // cwd is not interchangeable: it can represent a different checkout.
     if (projectPath) {
       const scoped = sessions.filter((s) => cwdMatchesProject(s.cwd, projectPath));
       if (scoped.length > 0) return scoped[0].file;
     }
-    return sessions[0]?.file ?? null;
+    return null;
   }
   for (const d of projectDirs) {
     const hit = await resolveSessionFile(d, sessionId);
-    if (hit) return hit;
+    if (hit) {
+      const summary = await quickSummarize(hit);
+      if (!projectPath || cwdMatchesProject(summary.cwd, projectPath)) return hit;
+    }
   }
   return null;
 }

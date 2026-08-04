@@ -1,11 +1,14 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { resolveTrustedExecutable } from "./executable.js";
 
 const run = promisify(execFile);
 
 async function tryGit(args: string[], cwd: string): Promise<string | null> {
   try {
-    const { stdout } = await run("git", args, { cwd, maxBuffer: 4 * 1024 * 1024 });
+    const git = await resolveTrustedExecutable("git", cwd);
+    if (!git) return null;
+    const { stdout } = await run(git, args, { cwd, maxBuffer: 4 * 1024 * 1024, shell: false });
     return stdout.trim();
   } catch {
     return null;

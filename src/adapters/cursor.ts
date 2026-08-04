@@ -56,7 +56,7 @@ export async function ingestCursor(opts: CursorIngestOpts): Promise<void> {
   if (workspaces.length === 0) {
     console.error(
       `no Cursor workspace found for ${opts.project}\n` +
-        `(scanned ${probe.workspaceRoot} for workspace.json matching this path or its parents)`,
+      `(scanned ${probe.workspaceRoot} for workspace.json matching this exact project identity)`,
     );
     process.exitCode = 1;
     return;
@@ -157,14 +157,7 @@ type CursorWorkspace = { hash: string; dir: string; folderUri: string; dbPath: s
 async function findCursorWorkspaces(probe: Probe, projectPath: string): Promise<CursorWorkspace[]> {
   if (!(await exists(probe.workspaceRoot))) return [];
   const entries = await fs.readdir(probe.workspaceRoot);
-  const targets: Set<string> = new Set();
-  let p = resolve(projectPath);
-  for (let i = 0; i < 8; i++) {
-    targets.add(normalizePath(p));
-    const parent = p.replace(/[\\/][^\\/]+$/, "");
-    if (!parent || parent === p) break;
-    p = parent;
-  }
+  const target = normalizePath(resolve(projectPath));
 
   const matches: CursorWorkspace[] = [];
   for (const e of entries) {
@@ -182,7 +175,7 @@ async function findCursorWorkspaces(probe: Probe, projectPath: string): Promise<
     if (!folderUri) continue;
     const decoded = fileUriToPath(folderUri);
     if (!decoded) continue;
-    if (targets.has(normalizePath(decoded))) {
+    if (normalizePath(decoded) === target) {
       matches.push({
         hash: e,
         dir,
@@ -195,9 +188,9 @@ async function findCursorWorkspaces(probe: Probe, projectPath: string): Promise<
 }
 
 function normalizePath(p: string): string {
-  // Windows: lowercase drive letter, forward slashes, strip trailing slash.
+  // Windows and default macOS filesystems compare case-insensitively.
   let n = p.replace(/\\/g, "/");
-  if (/^[a-zA-Z]:/.test(n)) n = n[0].toLowerCase() + n.slice(1);
+  if (process.platform === "win32" || process.platform === "darwin") n = n.toLowerCase();
   if (n.length > 3 && n.endsWith("/")) n = n.slice(0, -1);
   return n;
 }

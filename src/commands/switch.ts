@@ -4,6 +4,7 @@ import { resolveHandoffPaths } from "../format/paths.js";
 import { exists } from "../util/fs.js";
 import { buildPrimer, type Tool } from "./prime.js";
 import { save } from "./save.js";
+import { resolveTrustedExecutable } from "../util/executable.js";
 
 type SwitchOpts = {
   tool: Tool;
@@ -131,10 +132,12 @@ async function tryClipCandidates(
   return false;
 }
 
-function tryOneClip(cmd: string, args: string[], content: string): Promise<boolean> {
+async function tryOneClip(cmd: string, args: string[], content: string): Promise<boolean> {
+  const executable = await resolveTrustedExecutable(cmd, process.cwd());
+  if (!executable) return false;
   return new Promise((resolve) => {
     try {
-      const child = spawn(cmd, args, { stdio: ["pipe", "ignore", "ignore"] });
+      const child = spawn(executable, args, { stdio: ["pipe", "ignore", "ignore"], shell: false });
       child.on("error", () => resolve(false));
       child.on("exit", (code) => resolve(code === 0));
       child.stdin.end(content, "utf8");
@@ -180,21 +183,23 @@ export const LAUNCH_SETTLE_MS = 400;
  * inside the settle window; true if it's still running when the window closes.
  * Exported for tests — `launchTool` is just this plus the tool→command map.
  */
-export function spawnDetached(
+export async function spawnDetached(
   cmd: string,
   args: string[],
   cwd: string,
   settleMs: number = LAUNCH_SETTLE_MS,
 ): Promise<boolean> {
+  const executable = await resolveTrustedExecutable(cmd, cwd);
+  if (!executable) return false;
   return new Promise((resolve) => {
     try {
-      const child = spawn(cmd, args, {
+      const child = spawn(executable, args, {
         cwd,
         detached: true,
         stdio: "ignore",
-        // On Windows, GUI tools (cursor.cmd etc.) live behind .cmd shims
-        // that need shell=true to resolve via PATH.
-        shell: platform() === "win32",
+        // Never invoke cmd.exe: repository-controlled .cmd/.bat shims and
+        // shell metacharacters must not participate in tool launching.
+        shell: false,
       });
 
       let settled = false;

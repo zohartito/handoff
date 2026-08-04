@@ -73,16 +73,15 @@ test("summarizeSession skips malformed JSONL lines without crashing", async () =
   assert.match(out, /\*\*Assistant turns\*\*: 3/);
 });
 
-test("cwdMatchesProject: exact and descendant paths match, unrelated paths do not", () => {
+test("cwdMatchesProject: only exact project identity matches", () => {
   const proj = "C:\\Users\\zohar_4ta16fp\\handoff";
   // exact match (same case)
   assert.equal(cwdMatchesProject("C:\\Users\\zohar_4ta16fp\\handoff", proj), true);
-  // case-insensitive (Windows paths)
-  assert.equal(cwdMatchesProject("c:\\users\\zohar_4ta16fp\\handoff", proj, "win32"), true);
+  assert.equal(cwdMatchesProject("c:\\users\\zohar_4ta16fp\\handoff", proj, "win32"), false);
   // trailing slash tolerated
   assert.equal(cwdMatchesProject("C:\\Users\\zohar_4ta16fp\\handoff\\", proj), true);
-  // descendant
-  assert.equal(cwdMatchesProject("C:\\Users\\zohar_4ta16fp\\handoff\\src", proj), true);
+  // descendant sessions are distinct workspaces and must not cross-import.
+  assert.equal(cwdMatchesProject("C:\\Users\\zohar_4ta16fp\\handoff\\src", proj), false);
   // forward-slash mix
   assert.equal(cwdMatchesProject("C:/Users/zohar_4ta16fp/handoff", proj), true);
   // parent is NOT a match — this is the bug Codex found
@@ -100,23 +99,19 @@ test("cwdMatchesProject: platform-conditional case sensitivity", () => {
   assert.equal(cwdMatchesProject("/Users/Foo/proj", "/Users/Foo/proj", "linux"), true);
   assert.equal(cwdMatchesProject("/Users/foo/proj", "/Users/Foo/proj", "linux"), false);
   assert.equal(cwdMatchesProject("/users/Foo/proj", "/Users/Foo/proj", "linux"), false);
-  // Descendants still work with exact case
-  assert.equal(cwdMatchesProject("/Users/Foo/proj/src", "/Users/Foo/proj", "linux"), true);
+  assert.equal(cwdMatchesProject("/Users/Foo/proj/src", "/Users/Foo/proj", "linux"), false);
 
-  // macOS: default FS is case-insensitive (though case-preserving)
+  // macOS can use a case-sensitive volume; fallback comparison stays strict.
   assert.equal(cwdMatchesProject("/Users/Foo/proj", "/Users/Foo/proj", "darwin"), true);
-  assert.equal(cwdMatchesProject("/users/foo/proj", "/Users/Foo/proj", "darwin"), true);
-  assert.equal(cwdMatchesProject("/Users/FOO/proj/src", "/users/foo/proj", "darwin"), true);
+  assert.equal(cwdMatchesProject("/users/foo/proj", "/Users/Foo/proj", "darwin"), false);
+  assert.equal(cwdMatchesProject("/Users/FOO/proj/src", "/users/foo/proj", "darwin"), false);
 
-  // Windows: case-insensitive — C:\Foo and c:\foo are the same
-  assert.equal(cwdMatchesProject("C:\\Foo\\proj", "c:\\foo\\proj", "win32"), true);
+  assert.equal(cwdMatchesProject("C:\\Foo\\proj", "c:\\foo\\proj", "win32"), false);
 });
 
-test("normalizeForCompare: lowercases only on win32/darwin", () => {
-  // win32: full lowercase
-  assert.equal(normalizeForCompare("C:\\Users\\Foo", "win32"), "c:/users/foo");
-  // darwin: full lowercase
-  assert.equal(normalizeForCompare("/Users/Foo", "darwin"), "/users/foo");
+test("normalizeForCompare: preserves case in strict fallback mode", () => {
+  assert.equal(normalizeForCompare("C:\\Users\\Foo", "win32"), "C:/Users/Foo");
+  assert.equal(normalizeForCompare("/Users/Foo", "darwin"), "/Users/Foo");
   // linux: preserves case
   assert.equal(normalizeForCompare("/Users/Foo", "linux"), "/Users/Foo");
   // trailing separator stripped

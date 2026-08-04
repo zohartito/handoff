@@ -2,6 +2,7 @@ import { promises as fs } from "node:fs";
 import { homedir } from "node:os";
 import { delimiter as pathDelimiter, join, resolve } from "node:path";
 import { extractNgrams } from "../util/ngrams.js";
+import { readOrEmpty as readStateOrEmpty } from "../util/fs.js";
 
 export interface PatternsOpts {
   /** Override default search roots. When set, HANDOFF_SEARCH_ROOTS env is ignored. */
@@ -193,7 +194,8 @@ async function detectLanguage(projectDir: string): Promise<string> {
 
 async function readSourceTool(projectDir: string): Promise<string> {
   try {
-    const raw = await fs.readFile(join(projectDir, ".handoff", "meta.json"), "utf8");
+    const raw = await readStateOrEmpty(join(projectDir, ".handoff", "meta.json"));
+    if (!raw) return "unknown";
     const meta = JSON.parse(raw) as { sourceTool?: unknown };
     if (typeof meta.sourceTool === "string" && meta.sourceTool) return meta.sourceTool;
   } catch {
@@ -203,11 +205,7 @@ async function readSourceTool(projectDir: string): Promise<string> {
 }
 
 async function readOrEmpty(path: string): Promise<string> {
-  try {
-    return await fs.readFile(path, "utf8");
-  } catch {
-    return "";
-  }
+  return await readStateOrEmpty(path);
 }
 
 // ---------------------------------------------------------------------------

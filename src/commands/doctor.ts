@@ -8,6 +8,7 @@ import { exists, readJson, readOrEmpty } from "../util/fs.js";
 import { collectGitState, commitsSince, commitsSincePathChange } from "../util/git.js";
 import { SCHEMA_VERSION, type Meta } from "../format/types.js";
 import { loadMeta } from "../format/migrate.js";
+import { resolveTrustedExecutable } from "../util/executable.js";
 
 const run = promisify(execFile);
 
@@ -297,15 +298,7 @@ function hasHandoffCommand(hookEntry: unknown, needle: string): boolean {
 }
 
 async function findOnPath(bin: string): Promise<string | null> {
-  const isWin = platform() === "win32";
-  try {
-    const cmd = isWin ? "where.exe" : "which";
-    const { stdout } = await run(cmd, [bin]);
-    const first = stdout.split(/\r?\n/).map((s) => s.trim()).filter(Boolean)[0];
-    return first ?? null;
-  } catch {
-    return null;
-  }
+  return await resolveTrustedExecutable(bin, process.cwd());
 }
 
 /**
@@ -324,7 +317,9 @@ async function globalNpmBinDir(): Promise<string | null> {
     return (await exists(dir)) ? dir : null;
   }
   try {
-    const { stdout } = await run("npm", ["prefix", "-g"]);
+    const npm = await resolveTrustedExecutable("npm", process.cwd());
+    if (!npm) return null;
+    const { stdout } = await run(npm, ["prefix", "-g"], { shell: false });
     const prefix = stdout.trim();
     if (!prefix) return null;
     return resolve(prefix, "bin");
@@ -439,7 +434,14 @@ async function checkStaleJsonl(
   label: string,
 ): Promise<Check | null> {
   try {
-    const stat = await fs.stat(path);
+    const stat = await fs.lstat(path);
+    if (stat.isSymbolicLink() || !stat.isFile()) {
+      return {
+        level: "warn",
+        label: `${label} is linked or not a regular file`,
+        detail: "remove the unsafe state entry and recreate it with handoff",
+      };
+    }
     if (stat.size > 1) return null; // has real content
     return {
       level: "warn",

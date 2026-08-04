@@ -47,55 +47,51 @@ jobs:
           npm pack
           TARBALL=$(ls zohartito-handoff-*.tgz | head -1)
           npm install -g "./$TARBALL"
-          handoff --version
-      - name: init + prime + status (Unix)
-        if: runner.os != 'Windows'
+      - name: frozen command surface (all operating systems)
         shell: bash
         run: |
-          mkdir -p /tmp/handoff-smoke && cd /tmp/handoff-smoke
-          handoff init --from claude-code
-          handoff status
-          handoff prime --tool claude-code > /tmp/primer.txt
-          test -s /tmp/primer.txt
-          handoff prime --tool claude-code --compact > /tmp/compact.txt
-          test -s /tmp/compact.txt
-          handoff prime --tool claude-code --subagent > /tmp/subagent.txt
-          test -s /tmp/subagent.txt
-          handoff attempt "tried x" --error "boom" --fix "y"
-          handoff decide "go with A" --because "B was worse"
-          handoff correct "misread file" --user-said "re-read it"
-          handoff doctor || true
-          handoff search "tried" --root /tmp/handoff-smoke
-          handoff patterns --root /tmp/handoff-smoke --top 3
-      - name: init + prime + status (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $tmp = Join-Path $env:RUNNER_TEMP "handoff-smoke"
-          New-Item -ItemType Directory -Force -Path $tmp | Out-Null
-          Set-Location $tmp
-          handoff init --from claude-code
-          handoff status
-          handoff prime --tool claude-code | Out-File -Encoding utf8 primer.txt
-          if ((Get-Item primer.txt).Length -eq 0) { throw "primer empty" }
-          handoff prime --tool claude-code --compact | Out-File -Encoding utf8 compact.txt
-          handoff prime --tool claude-code --subagent | Out-File -Encoding utf8 subagent.txt
-          handoff attempt "tried x" --error "boom" --fix "y"
-          handoff decide "go with A" --because "B was worse"
-          handoff correct "misread file" --user-said "re-read it"
-          try { handoff doctor } catch { }
-          handoff search "tried" --root $tmp
-          handoff patterns --root $tmp --top 3
-      - name: clipboard cascade presence check (Linux only)
-        if: runner.os == 'Linux'
-        shell: bash
-        run: |
-          echo "checking which clipboard tools are available on ubuntu-latest:"
-          which wl-copy || echo "  wl-copy: missing (expected in headless runner)"
-          which xclip || echo "  xclip: missing (expected in headless runner)"
-          which xsel || echo "  xsel: missing (expected in headless runner)"
-          echo "cascade falls through to 'copy manually' instructions on headless — smoke-exercised via handoff switch --no-launch"
-          mkdir -p /tmp/clip-test && cd /tmp/clip-test
-          handoff init --from claude-code
-          # --no-launch skips the tool spawn, still attempts clipboard and reports
-          handoff switch codex --no-launch || true
+          set -euo pipefail
+          scratch_dir="$(mktemp -d)"
+          handoff --help >/dev/null
+          test "$(handoff --version)" = "0.9.2"
+          for tool in claude-code claude-desktop cursor codex; do
+            handoff uninstall --tool "$tool" >"$scratch_dir/handoff-uninstall-$tool.txt"
+            test -s "$scratch_dir/handoff-uninstall-$tool.txt"
+          done
+
+          smoke_dir="$scratch_dir/handoff-frozen-smoke"
+          mkdir -p "$smoke_dir/.handoff"
+          printf 'preserve-this-history\n' >"$smoke_dir/.handoff/keep.txt"
+          cd "$smoke_dir"
+
+          expect_refusal() {
+            name="$1"
+            shift
+            if handoff "$@" >"$scratch_dir/handoff-$name.stdout" 2>"$scratch_dir/handoff-$name.stderr"; then
+              echo "expected refusal: handoff $*" >&2
+              exit 1
+            fi
+            grep -qi "permanently disabled" "$scratch_dir/handoff-$name.stderr"
+            test "$(cat .handoff/keep.txt)" = "preserve-this-history"
+          }
+
+          expect_refusal init init --from claude-code
+          expect_refusal status status
+          expect_refusal save save
+          expect_refusal attempt attempt x
+          expect_refusal decide decide x
+          expect_refusal correct correct x
+          expect_refusal capture capture --from stdin
+          expect_refusal prime prime --tool codex
+          expect_refusal install install --tool cursor
+          expect_refusal doctor doctor
+          expect_refusal hook hook UserPromptSubmit
+          expect_refusal switch switch codex
+          expect_refusal ingest ingest --from codex
+          expect_refusal obsidian obsidian
+          expect_refusal search search x
+          expect_refusal patterns patterns
+          expect_refusal verify verify
+          expect_refusal mcp mcp
+          expect_refusal evaluate evaluate
+          expect_refusal sync sync

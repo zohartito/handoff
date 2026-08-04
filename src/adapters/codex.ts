@@ -87,7 +87,7 @@ export async function ingestCodex(opts: CodexIngestOpts): Promise<void> {
   if (scoped.length === 0) {
     console.error(
       `no Codex sessions found for ${opts.project}\n` +
-        `  scanned ${sessionsRoot} (${withMeta.length} rollouts; none matched this path or its parents)`,
+        `  scanned ${sessionsRoot} (${withMeta.length} rollouts; none matched this exact project identity)`,
     );
     process.exitCode = 1;
     return;
@@ -276,27 +276,18 @@ async function readSessionIndex(path: string): Promise<Map<string, string>> {
 }
 
 /**
- * Scope rollouts to a project path by matching `session_meta.payload.cwd`
- * against the project path or any of its parents (walk up 8 levels, same as
- * the Claude Code adapter). Windows path handling: lowercase drive letter
- * and normalize to forward slashes so backslash/slash variants match.
+ * Scope rollouts to the exact `session_meta.payload.cwd` project identity.
+ * Parent fallbacks leak another checkout's transcript into this project.
  */
 function scopeByProject(rollouts: CodexRolloutInfo[], projectPath: string): CodexRolloutInfo[] {
-  const targets = new Set<string>();
-  let p = resolve(projectPath);
-  for (let i = 0; i < 8; i++) {
-    targets.add(normalizePath(p));
-    const parent = p.replace(/[\\/][^\\/]+$/, "");
-    if (!parent || parent === p) break;
-    p = parent;
-  }
-  return rollouts.filter((r) => r.cwd && targets.has(normalizePath(r.cwd)));
+  const target = normalizePath(resolve(projectPath));
+  return rollouts.filter((r) => r.cwd && normalizePath(r.cwd) === target);
 }
 
 function normalizePath(p: string): string {
-  // Windows: lowercase drive letter, forward slashes, strip trailing slash.
+  // Windows and default macOS filesystems compare case-insensitively.
   let n = p.replace(/\\/g, "/");
-  if (/^[a-zA-Z]:/.test(n)) n = n[0].toLowerCase() + n.slice(1);
+  if (process.platform === "win32" || process.platform === "darwin") n = n.toLowerCase();
   if (n.length > 3 && n.endsWith("/")) n = n.slice(0, -1);
   return n;
 }

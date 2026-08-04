@@ -1,5 +1,5 @@
-import { promises as fs } from "node:fs";
 import { join } from "node:path";
+import { readOrEmpty } from "../util/fs.js";
 import {
   discoverHandoffProjects,
   type HandoffProject,
@@ -57,12 +57,8 @@ async function scanFile(
   caseSensitive: boolean,
   wordBoundary: RegExp,
 ): Promise<SearchMatch[]> {
-  let contents: string;
-  try {
-    contents = await fs.readFile(filePath, "utf8");
-  } catch {
-    return [];
-  }
+  const contents = await readOrEmpty(filePath);
+  if (!contents) return [];
 
   const haystackTransform = caseSensitive ? (s: string) => s : (s: string) => s.toLowerCase();
   const needle = haystackTransform(query);

@@ -78,6 +78,11 @@ export async function ingestGemini(opts: GeminiIngestOpts): Promise<void> {
   }
 
   const sessionDir = join(probe.base, "tmp", hash);
+  if (!(await geminiSessionMatchesProject(sessionDir, opts.project))) {
+    console.error("Gemini session root does not exactly match this canonical project; refusing import");
+    process.exitCode = 1;
+    return;
+  }
   const chatsDir = join(sessionDir, "chats");
   const checkpointsDir = join(sessionDir, "checkpoints");
 
@@ -125,6 +130,7 @@ export async function buildGeminiSummary(opts: { project: string; session?: stri
   const hash = await resolveProjectHash(mapping, opts.project, probe.base);
   if (!hash) return null;
   const sessionDir = join(probe.base, "tmp", hash);
+  if (!(await geminiSessionMatchesProject(sessionDir, opts.project))) return null;
   const chatsDir = join(sessionDir, "chats");
   const checkpointsDir = join(sessionDir, "checkpoints");
   const sessionId = opts.session ?? "latest";
@@ -188,9 +194,8 @@ function normalizedProjectMap(raw: Record<string, string>): Map<string, string> 
 }
 
 /**
- * Walk up to 8 parent dirs looking for a matching hash in projects.json.
- * Same contract as Claude Code + Cursor adapters — tolerant to the user
- * having launched Gemini from the project's parent dir.
+ * Resolve only the exact project key.  Parent project fallback can import a
+ * different checkout's private transcript into the current handoff.
  */
 async function resolveProjectHash(
   mapping: Record<string, string>,
@@ -198,16 +203,9 @@ async function resolveProjectHash(
   _base: string,
 ): Promise<string | null> {
   const normalizedMap = normalizedProjectMap(mapping);
-  let p = resolve(projectPath);
-  for (let i = 0; i < 8; i++) {
-    const key = normalizePath(p);
-    const hit = normalizedMap.get(key);
-    if (hit) return hit;
-    const parent = p.replace(/[\\/][^\\/]+$/, "");
-    if (!parent || parent === p) break;
-    p = parent;
-  }
-  return null;
+  const hit = normalizedMap.get(normalizePath(resolve(projectPath))) ?? null;
+  // A map value becomes a path component. Reject traversal and separators.
+  return hit && /^[A-Za-z0-9_-]+$/.test(hit) ? hit : null;
 }
 
 /**
@@ -223,6 +221,16 @@ async function readProjectRoot(sessionDir: string): Promise<string | null> {
     return trimmed.length > 0 ? trimmed : null;
   } catch {
     return null;
+  }
+}
+
+async function geminiSessionMatchesProject(sessionDir: string, project: string): Promise<boolean> {
+  const recorded = await readProjectRoot(sessionDir);
+  if (!recorded) return false;
+  try {
+    return (await fs.realpath(recorded)) === (await fs.realpath(project));
+  } catch {
+    return false;
   }
 }
 

@@ -1,13 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
-import { execFileSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { buildStandingRulesContext } from "../src/commands/prime.js";
 import { resolveHandoffPaths } from "../src/format/paths.js";
 
-const CLI = resolve(process.cwd(), "bin", "handoff.mjs");
+const CLI = resolve(process.cwd(), "dist-test", "src", "cli.js");
 
 function scaffold(withRepeatedRule: boolean): string {
   const dir = mkdtempSync(join(tmpdir(), "handoff-reinject-"));
@@ -26,8 +26,8 @@ function scaffold(withRepeatedRule: boolean): string {
 }
 
 /** Drive the real hook through the CLI so we observe actual stdout. */
-function runHook(cwd: string, event: string): string {
-  return execFileSync(process.execPath, [CLI, "hook", event], {
+function runHook(cwd: string, event: string) {
+  return spawnSync(process.execPath, [CLI, "hook", event], {
     cwd,
     encoding: "utf8",
     input: JSON.stringify({ hook_event_name: "UserPromptSubmit", cwd }),
@@ -59,18 +59,21 @@ test("mid-session context is phrased as information, not an instruction", async 
   assert.match(ctx, /information, not instructions/);
 });
 
-test("user-prompt-submit hook emits valid UserPromptSubmit JSON", () => {
-  const out = runHook(scaffold(true), "user-prompt-submit");
-  const parsed = JSON.parse(out);
-  assert.equal(parsed.hookSpecificOutput.hookEventName, "UserPromptSubmit");
-  assert.match(parsed.hookSpecificOutput.additionalContext, /pathlib/);
+test("user-prompt-submit hook is explicitly refused", () => {
+  const result = runHook(scaffold(true), "user-prompt-submit");
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /permanently disabled/);
 });
 
-test("user-prompt-submit hook prints nothing when there are no standing rules", () => {
-  assert.equal(runHook(scaffold(false), "user-prompt-submit").trim(), "");
+test("hook refusal does not depend on presence of state", () => {
+  const result = runHook(scaffold(false), "user-prompt-submit");
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /permanently disabled/);
 });
 
-test("user-prompt-submit hook prints nothing outside a handoff project", () => {
+test("hook refusal occurs outside a handoff project too", () => {
   const bare = mkdtempSync(join(tmpdir(), "handoff-reinject-bare-"));
-  assert.equal(runHook(bare, "user-prompt-submit").trim(), "");
+  const result = runHook(bare, "user-prompt-submit");
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /permanently disabled/);
 });
