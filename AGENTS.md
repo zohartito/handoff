@@ -38,3 +38,16 @@ and are consolidated by the `dream` skill. Read them before non-trivial work.
 ## Agent rules (all harnesses)
 - Determinism boundary: anything that must be EXACT (money, geometry, safety limits, scoring, pricing) lives in code; the model only orchestrates and judges.
 - Keep this file current: when you change how this repo is run, tested, or structured, update AGENTS.md in the same commit. Keep it under ~150 lines.
+
+## Agent-to-agent (sideways) handoff
+The same payload discipline works between two agents running *concurrently*, not just one
+session handing off to the next across time. A persists the `.handoff/` payload (`init` ->
+author task/progress/open-loops -> `decide` -> `save`); a fresh, concurrent B loads it with
+`prime` and finishes. The payload is the ONLY channel — no shared context, no back-channel to
+ask A anything, and it's a one-shot point-in-time cut with no locking, so whatever A does not
+write down is lost to B. Two carry-over caveats seen in practice: `prime`'s preamble +
+rate-limit protocol are framed for a *temporal* resume ("picking up work previously in
+progress"), which reads wrong for concurrent agents; and HTML comments in payload files get
+dropped by the primer renderer, so never put a load-bearing token inside `<!-- -->`.
+Worked example + findings: `multi-agent-lab/experiments/handoff-sideways/` (run_a.sh ->
+run_b.sh, NOTES.md).
