@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SCHED nightly retrieval-eval regression loop for handoff.
+  NOT loaded automatically. To enable on this Mac:
+
+    cp scripts/launchd/com.zohartito.handoff.retrieval-eval.plist \
+       ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/com.zohartito.handoff.retrieval-eval.plist
+
+  To disable:
+    launchctl unload ~/Library/LaunchAgents/com.zohartito.handoff.retrieval-eval.plist
+
+  Runs nightly at 03:00, appends a durable line to .claude/LEARNINGS.md, and
+  writes the JSON result to /tmp/handoff.retrieval-eval.log.
+  A login shell (zsh -lc) is used so node is on PATH.
+-->
+<plist version="1.0">
+  <dict>
+    <key>Label</key>
+    <string>com.zohartito.handoff.retrieval-eval</string>
+    <key>ProgramArguments</key>
+    <array>
+      <string>/bin/zsh</string>
+      <string>-lc</string>
+      <string>cd /Users/zohartito/projects/handoff &amp;&amp; node scripts/retrieval-eval.mjs</string>
+    </array>
+    <key>StartCalendarInterval</key>
+    <dict>
+      <key>Hour</key>
+      <integer>3</integer>
+      <key>Minute</key>
+      <integer>0</integer>
+    </dict>
+    <key>RunAtLoad</key>
+    <false/>
+    <key>StandardOutPath</key>
+    <string>/tmp/handoff.retrieval-eval.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/handoff.retrieval-eval.err.log</string>
+  </dict>
+</plist>

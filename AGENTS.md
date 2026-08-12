@@ -16,6 +16,17 @@ python3 ~/.agent-kit/verify_loop.py --task "<what to do>" --verify "npm test && 
 ## Layout
 `.claude/`, `.github/`, `.handoff/`, `.planning/`, `bin/`, `scripts/`, `src/`, `templates/`, `tests/`
 
+## Loops
+- **`retrieval-eval` (SCHED, nightly)** — retrieval-quality regression run.
+  - Runner: `scripts/retrieval-eval.mjs` — rebuilds `tsc -p tsconfig.test.json` and re-runs
+    `tests/retrieval.test.ts` + `tests/evaluate.test.ts` via `node --test`; emits `loop-result/v1`
+    JSON; exit code = gate. Reuses the existing suites (does NOT duplicate them).
+  - Schedule: `scripts/launchd/com.zohartito.handoff.retrieval-eval.plist` (nightly 03:00).
+    NOT loaded — load with `launchctl load ~/Library/LaunchAgents/com.zohartito.handoff.retrieval-eval.plist`.
+  - Flywheel: local runs append to `.claude/LEARNINGS.md`; `--ci`/`--dry-run` skip the append.
+  - Note: this is the scheduled complement to the session-end self-improving loop
+    (`verify_loop.py`) — it guards ranking/metric drift when no PR is open.
+
 ## Conventions
 - Follow CONVENTIONS.md (if present) and the global ~/.claude/CLAUDE.md.
 - Make surgical, single-purpose changes; match existing style.
