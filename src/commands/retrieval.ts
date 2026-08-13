@@ -2,6 +2,7 @@ import { extractNgrams } from "../util/ngrams.js";
 import {
   entryId,
   entryTextForRanking,
+  isSuperseded,
   rankEntries,
   splitEntries,
   PROMOTION_THRESHOLD,
@@ -247,7 +248,10 @@ export function retrieveFromRaw(
   task: string,
   opts: RetrieveOpts = {},
 ): ScoredEntry[] {
+  // Revoked entries must not resurface via task relevance: a stale fact is
+  // often the *best* lexical match for the task that made it stale.
   const entries = splitEntries(raw)
+    .filter((text) => !isSuperseded(text))
     .map((text) => ({ id: entryId(text) ?? "", text }))
     .filter((e) => e.id);
   return retrieveForTask(entries, task, opts);

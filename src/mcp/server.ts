@@ -140,6 +140,13 @@ export const TOOLS: ToolDef[] = [
           type: "string",
           description: "Optional: the extracted rule to follow next time.",
         },
+        key: {
+          type: "string",
+          description:
+            "Optional: stable fact key (e.g. 'deploy.target'). A newer entry " +
+            "with the same key revokes the older one; revoked entries stay in " +
+            "the file for audit.",
+        },
       },
       required: ["action", "userSaid"],
       additionalProperties: false,
@@ -151,6 +158,7 @@ export const TOOLS: ToolDef[] = [
         action: String(args.action),
         userSaid: String(args.userSaid),
         lesson: args.lesson === undefined ? undefined : String(args.lesson),
+        key: args.key === undefined ? undefined : String(args.key),
         cwd: ctx.projectRoot,
         quiet: true,
       });
@@ -215,6 +223,13 @@ export const TOOLS: ToolDef[] = [
           items: { type: "string" },
           description: "Optional: the alternatives that were considered and rejected.",
         },
+        key: {
+          type: "string",
+          description:
+            "Optional: stable fact key (e.g. 'deploy.target'). A newer entry " +
+            "with the same key revokes the older one; revoked entries stay in " +
+            "the file for audit.",
+        },
       },
       required: ["choice"],
       additionalProperties: false,
@@ -226,6 +241,7 @@ export const TOOLS: ToolDef[] = [
         choice: String(args.choice),
         because: args.because === undefined ? undefined : String(args.because),
         alternatives: normalizeStringArray(args.alternatives),
+        key: args.key === undefined ? undefined : String(args.key),
         cwd: ctx.projectRoot,
       });
       return { text: "Logged decision to .handoff/decisions.md." };
