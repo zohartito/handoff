@@ -76,7 +76,7 @@ handoff attempt "run migration with --force" \
   --summary "bulk write hits pg pool limit"
 ```
 
-### `handoff decide <choice> [--because <reason>] [--alt <alternatives...>]`
+### `handoff decide <choice> [--because <reason>] [--alt <alternatives...>] [--key <key>]`
 
 Logs a design decision to `decisions.md`. Capture the decision, the reasoning, and the alternatives you rejected so the next session doesn't re-litigate it.
 
@@ -86,9 +86,11 @@ handoff decide "use zod for request validation" \
   --alt "joi" "yup" "hand-rolled"
 ```
 
-### `handoff correct <action> --user-said <text> [--lesson <text>]`
+`--key` names the fact the entry asserts (e.g. `--key deploy.target`). Logging a newer entry under the same key **revokes** the older one: it's marked `**superseded:** true` in place (with a `revoked-by` pointer), drops out of primers and retrieval, but keeps its full text in the file for audit. Re-asserting an old value later just makes it active again. This is the fix for stale facts polluting the primer — an append-only log measurably underperforms *no memory at all* once facts drift ([TEPA, arXiv:2608.07429](https://arxiv.org/abs/2608.07429)).
 
-Logs a user correction to `corrections.md`. When the user pushes back on an approach, log it verbatim — the lesson travels with the project.
+### `handoff correct <action> --user-said <text> [--lesson <text>] [--key <key>]`
+
+Logs a user correction to `corrections.md`. When the user pushes back on an approach, log it verbatim — the lesson travels with the project. `--key` works as in `handoff decide`: when a correction updates a fact logged before, the stale entry is revoked instead of competing with the new one.
 
 ```bash
 handoff correct "was about to add a new ORM layer" \

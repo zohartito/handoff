@@ -140,11 +140,12 @@ function defaultIsAuto(entry: string): boolean {
 }
 
 /**
- * An entry marked superseded is excluded from ranking entirely. The marker has
- * no producer yet — the data path exists ahead of a future `handoff supersede`
- * so that ranking need not change when it lands.
+ * An entry marked superseded is excluded from ranking entirely. Produced by
+ * keyed revocation (`revocation.ts`): logging `correct`/`decide` with `--key`
+ * annotates older active entries under the same key in place, so they drop out
+ * of ranking and retrieval while staying in the file for audit.
  */
-function isSuperseded(entry: string): boolean {
+export function isSuperseded(entry: string): boolean {
   return /^\*\*superseded:\*\*\s*true\s*$/im.test(entry);
 }
 

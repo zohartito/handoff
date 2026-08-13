@@ -105,11 +105,16 @@ program
   .description("log a key decision with its reasoning")
   .option("--because <reason>", "why this choice")
   .option("--alt <alternatives...>", "alternatives considered")
+  .option(
+    "--key <key>",
+    "fact key: a newer entry with the same key revokes the older one (kept for audit)",
+  )
   .action(async (choice, opts) => {
     await decide({
       choice,
       because: opts.because,
       alternatives: opts.alt,
+      key: opts.key,
     });
   });
 
@@ -118,11 +123,16 @@ program
   .description("log a time the agent got it wrong and what the user meant")
   .requiredOption("--user-said <text>", "verbatim user feedback")
   .option("--lesson <text>", "extracted rule for the future")
+  .option(
+    "--key <key>",
+    "fact key: a newer entry with the same key revokes the older one (kept for audit)",
+  )
   .action(async (action, opts) => {
     await correct({
       action,
       userSaid: opts.userSaid,
       lesson: opts.lesson,
+      key: opts.key,
     });
   });
 
