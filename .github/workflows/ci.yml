@@ -116,3 +116,4 @@ jobs:
         handoff switch codex --no-launch || true
 permissions:
   contents: read
+  pull-requests: read
