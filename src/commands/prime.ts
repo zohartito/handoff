@@ -4,6 +4,7 @@ import type { Meta } from "../format/types.js";
 import { loadMeta } from "../format/migrate.js";
 import { rankEntries, splitEntries, condenseEntry, type RankedEntries } from "./ranking.js";
 import { retrieveFromRaw } from "./retrieval.js";
+import { computeHandoverRecord, renderLossLine } from "../format/handover.js";
 
 export type Tool =
   | "claude-code"
@@ -469,6 +470,16 @@ function shedToBudget(parts: string[], budget: number): string {
   const isRecent = (s: string): boolean => /^## (Latest|Recurring)/.test(s);
   const isStanding = (s: string): boolean => /^## Standing rules/.test(s);
   const isFailureBlock = (s: string): boolean => /^## Recurring failure modes/.test(s);
+  const isFooter = (s: string): boolean => /^## Handover fidelity/.test(s);
+
+  // 0. The handover-fidelity footer is metadata about loss, not carried
+  //    content. Under budget pressure, correctness of the carried state wins:
+  //    drop the footer before shedding any real content. It survives whenever
+  //    there is slack (the common, lighter-project case).
+  if (assemble(working).length > budget) {
+    const idx = working.findIndex(isFooter);
+    if (idx >= 0) working.splice(idx, 1);
+  }
 
   // 1. Shrink the recent lists entry by entry, newest kept longest.
   for (let i = working.length - 1; i >= 0 && assemble(working).length > budget; i--) {
@@ -579,6 +590,13 @@ export async function buildCompactPrimer(
     parts.push(`## Environment\n\n${envLine}`);
   }
 
+  // Handover fidelity footer — a measurable loss indicator for the compaction
+  // this primer just performed. Pushed as a skeleton part so shedToBudget keeps
+  // it (it never matches the recent/standing shed patterns) and the whole
+  // primer, footer included, stays within budget.
+  const record = await computeHandoverRecord(paths, "compact");
+  parts.push(`## Handover fidelity\n\n${renderLossLine(record)}`);
+
   return shedToBudget(parts, COMPACT_THRESHOLD);
 }
 
@@ -671,6 +689,11 @@ export async function buildSubagentPrimer(
       maxEntryChars: 300,
     }),
   );
+
+  // Handover fidelity footer (subagent caps are tighter, so residual is higher
+  // here — surfacing it is the point).
+  const record = await computeHandoverRecord(paths, "subagent");
+  parts.push(`## Handover fidelity\n\n${renderLossLine(record)}`);
 
   return shedToBudget(parts, SUBAGENT_BUDGET);
 }

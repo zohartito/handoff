@@ -15,6 +15,7 @@ export type HandoffPaths = {
   codebaseMap: string;
   openLoops: string;
   references: string;
+  handoverRecord: string;
   toolHistory: string;
   transcript: string;
   filesManifest: string;
@@ -40,6 +41,7 @@ export function resolveHandoffPaths(cwd: string = process.cwd()): HandoffPaths {
     codebaseMap: resolve(dir, "codebase-map.md"),
     openLoops: resolve(dir, "open-loops.md"),
     references: resolve(dir, "references.md"),
+    handoverRecord: resolve(dir, "handover-record.md"),
     toolHistory: resolve(dir, "tool-history.jsonl"),
     transcript: resolve(dir, "transcript.jsonl"),
     filesManifest: resolve(dir, "files.json"),

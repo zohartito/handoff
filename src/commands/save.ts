@@ -4,6 +4,7 @@ import { collectGitState } from "../util/git.js";
 import { exists, writeJson, writeFileSafe, readOrEmpty } from "../util/fs.js";
 import { withFileLock } from "../util/lock.js";
 import { loadMeta } from "../format/migrate.js";
+import { computeHandoverRecord, renderHandoverRecord } from "../format/handover.js";
 
 const AUTO_HEADER = "## Auto";
 const HUMAN_HEADER = "## Human notes";
@@ -48,6 +49,11 @@ export async function save(opts: { cwd?: string } = {}): Promise<void> {
     const rebuilt = replaceAutoSection(existing, envAuto);
     await writeFileSafe(paths.environment, rebuilt);
   });
+
+  // Refresh the handover record: a measurable, three-tier account of what the
+  // next handoff carries vs. drops. Fully generated, so it is rewritten whole.
+  const record = await computeHandoverRecord(paths, "compact");
+  await writeFileSafe(paths.handoverRecord, renderHandoverRecord(record));
 
   console.log(`saved at ${new Date().toISOString()}`);
   if (git) console.log(`git: ${git.branch ?? "(detached)"}, ${countLines(git.status)} changes`);
