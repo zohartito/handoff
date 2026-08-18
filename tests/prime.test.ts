@@ -149,8 +149,12 @@ test("buildCompactPrimer keeps task body, latest correction, latest attempt", as
 
   // Task content present
   assert.match(out, /portable session-state CLI/);
-  // Latest correction present (the 5th one)
-  assert.match(out, /over-commented obvious code/);
+  // Latest correction's RULE present verbatim. Constraint-preserving compaction
+  // now carries every user rule in the verbatim constraints block; the fixture
+  // sits at the budget edge, so the newest correction's verbose `agent did:`
+  // prose ("over-commented obvious code") may be shed to make room — but the
+  // rule the user actually stated survives, which is the point.
+  assert.match(out, /## User constraints \(carried verbatim/);
   assert.match(out, /comments only where the logic isn't self-evident/);
   // Latest attempt present (the 5th one)
   assert.match(out, /parsed attempts\.md with a naive split/);
@@ -395,9 +399,12 @@ test("buildSubagentPrimer includes the task + latest correction + latest attempt
   // Task section and the parent's goal.
   assert.match(out, /## Task/);
   assert.match(out, /portable session-state CLI/);
-  // Latest (5th) correction present.
+  // The user's rules are carried verbatim in the constraints block (the newest
+  // correction's `agent did:` prose may be shed under the subagent's tight
+  // budget, but the rule the user stated survives).
+  assert.match(out, /## User constraints \(carried verbatim/);
+  assert.match(out, /comments only where the logic isn't self-evident/);
   assert.match(out, /## Latest corrections/);
-  assert.match(out, /over-commented obvious code/);
   // Latest (5th) attempt present.
   assert.match(out, /## Latest failed attempts/);
   assert.match(out, /parsed attempts\.md with a naive split/);

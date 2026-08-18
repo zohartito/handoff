@@ -5,6 +5,11 @@ import { loadMeta } from "../format/migrate.js";
 import { rankEntries, splitEntries, condenseEntry, type RankedEntries } from "./ranking.js";
 import { retrieveFromRaw } from "./retrieval.js";
 import { computeHandoverRecord, renderLossLine } from "../format/handover.js";
+import {
+  extractConstraints,
+  renderConstraintsBlock,
+  verifyConstraintsPreserved,
+} from "../format/constraints.js";
 
 export type Tool =
   | "claude-code"
@@ -115,6 +120,28 @@ export async function prime(opts: PrimeOpts): Promise<void> {
 
   process.stdout.write(output);
   if (!output.endsWith("\n")) process.stdout.write("\n");
+
+  // Constraint-preserving compaction guard. The compact/subagent primers are a
+  // lossy compaction step; verify every user constraint survived it. If one was
+  // dropped (only possible under pathological budget pressure, since the block
+  // is shed-protected), fail loudly rather than hand off a primer missing a
+  // guardrail. stderr keeps stdout — the primer itself — clean for piping.
+  if (useCompact || useSubagent) {
+    const constraints = extractConstraints(await readOrEmpty(paths.corrections));
+    const { ok, missing } = verifyConstraintsPreserved(output, constraints);
+    if (!ok) {
+      console.error(
+        `\n⚠️  handoff: ${missing.length} user constraint(s) were dropped during ` +
+          `compaction and could NOT be re-injected:`,
+      );
+      for (const m of missing) console.error(`   - ${m.text}`);
+      console.error(
+        "   This primer is missing a guardrail. Use `handoff prime` (full) " +
+          "or raise --max-chars.",
+      );
+      process.exitCode = 1;
+    }
+  }
 }
 
 export async function buildPrimer(
@@ -558,13 +585,26 @@ export async function buildCompactPrimer(
 
   // 3. Corrections — recurring themes promoted above the recent tail.
   const correctionsRaw = await readOrEmpty(paths.corrections);
+
+  // Constraint-preserving compaction: extract every user rule from
+  // corrections.md and re-inject it verbatim as a block shedToBudget must not
+  // drop. The ranked sections below still carry the latest corrections in full
+  // (with their agent-did/lesson context); this guarantees the *rules* survive
+  // even when older entries fall outside the recentN window or get shed.
+  const constraintsBlock = renderConstraintsBlock(extractConstraints(correctionsRaw));
+  if (constraintsBlock) parts.push(constraintsBlock);
+
   parts.push(
     ...renderRanked(correctionsRaw, {
       standingTitle: "Standing rules (repeated corrections — treat as hard constraints)",
       recentTitle: "Latest corrections",
       file: "corrections.md",
       task: taskForRetrieval,
-      recentN: 3,
+      // With the verbatim constraints block above, the tail's job shrinks from
+      // "carry the rules" to "show the newest one in full context". Carrying
+      // fewer full entries here frees the budget the block consumes, so it
+      // doesn't come at the expense of the failed-attempts section below.
+      recentN: constraintsBlock ? 1 : 3,
       maxStanding: 5,
       maxEntryChars: 400,
     }),
@@ -665,13 +705,21 @@ export async function buildSubagentPrimer(
   // Corrections — highest-signal "don't repeat this" input. Tighter caps than
   // the compact primer: a subagent is focused on one subtask and has ~1.5k.
   const correctionsRaw = await readOrEmpty(paths.corrections);
+
+  // Constraint-preserving compaction (see buildCompactPrimer): the subagent's
+  // recentN is even tighter (2), so more constraints would otherwise be lost.
+  const constraintsBlock = renderConstraintsBlock(extractConstraints(correctionsRaw));
+  if (constraintsBlock) parts.push(constraintsBlock);
+
   parts.push(
     ...renderRanked(correctionsRaw, {
       standingTitle: "Standing rules (repeated corrections — hard constraints)",
       recentTitle: "Latest corrections",
       file: "corrections.md",
       task: taskForRetrieval,
-      recentN: 2,
+      // See buildCompactPrimer: the constraints block carries the rules, so the
+      // tail only needs the newest entry for context.
+      recentN: constraintsBlock ? 1 : 2,
       maxStanding: 2,
       maxEntryChars: 300,
     }),
