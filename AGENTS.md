@@ -27,6 +27,15 @@ python3 ~/.agent-kit/verify_loop.py --task "<what to do>" --verify "npm test && 
   - Note: this is the scheduled complement to the session-end self-improving loop
     (`verify_loop.py`) — it guards ranking/metric drift when no PR is open.
 
+## Log lifecycle (append → compact → archive)
+The log files (`attempts.md`, `corrections.md`, `decisions.md`) are append-only, so they
+grow without bound (same failure re-logged on every recurrence). `handoff compact`
+(`src/commands/compact.ts`) is the lifecycle: dedupe byte-identical entries into one with a
+`**seen:** N×` provenance line, relocate the oldest distinct entries beyond `--keep` into a
+verbatim `## Archive` fold, and validate (no distinct entry dropped, every event still counted)
+before replacing the file. It RELOCATES and COUNTS — never rewrites prose (determinism
+boundary: no lossy summarization of load-bearing traces). Idempotent.
+
 ## Conventions
 - Follow CONVENTIONS.md (if present) and the global ~/.claude/CLAUDE.md.
 - Make surgical, single-purpose changes; match existing style.

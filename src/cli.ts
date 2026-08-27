@@ -23,6 +23,7 @@ import { patterns } from "./commands/patterns.js";
 import { verify } from "./commands/verify.js";
 import { runMcpServer } from "./mcp/server.js";
 import { evaluate } from "./commands/evaluate.js";
+import { compact, isCompactTarget, type CompactTarget } from "./commands/compact.js";
 
 /**
  * Read + parse the JSON payload Claude Code pipes to a hook on stdin. Returns
@@ -343,6 +344,30 @@ program
   .action(async (opts) => {
     const cwd = opts.cwd ?? process.env.HANDOFF_PROJECT_ROOT ?? process.cwd();
     await runMcpServer({ cwd, version: pkgVersion });
+  });
+
+program
+  .command("compact [target]")
+  .description(
+    "dedupe + archive the append-only logs (attempts | corrections | decisions | all) so they stop growing without bound",
+  )
+  .option("--keep <n>", "distinct live entries to keep above the archive fold (default 20)", (v) => parseInt(v, 10))
+  .option("--dry-run", "report what would change without writing")
+  .action(async (target, opts) => {
+    let targets: CompactTarget[] | undefined;
+    if (target && target !== "all") {
+      if (!isCompactTarget(target)) {
+        console.error(`compact: invalid target '${target}' (use attempts | corrections | decisions | all)`);
+        process.exitCode = 1;
+        return;
+      }
+      targets = [target];
+    }
+    await compact({
+      targets,
+      keep: Number.isFinite(opts.keep) ? opts.keep : undefined,
+      dryRun: !!opts.dryRun,
+    });
   });
 
 program
