@@ -2,7 +2,13 @@ import { spawn } from "node:child_process";
 import { platform } from "node:os";
 import { resolveHandoffPaths } from "../format/paths.js";
 import { exists } from "../util/fs.js";
-import { buildPrimer, type Tool } from "./prime.js";
+import {
+  buildPrimer,
+  buildCompactPrimer,
+  detectHandoffTaxDirection,
+  type Tool,
+} from "./prime.js";
+import { loadMeta } from "../format/migrate.js";
 import { save } from "./save.js";
 
 type SwitchOpts = {
@@ -61,8 +67,15 @@ export async function switchTool(opts: SwitchOpts): Promise<void> {
     }
   }
 
-  // 2. Build primer for the target tool
-  const primer = await buildPrimer(paths, opts.tool, Infinity);
+  // 2. Load meta to detect escalation vs downshift (Ganz et al. 2608.24358):
+  //    escalating into a more capable tool → compact primer (strip LC trajectory);
+  //    downshifting or lateral → full primer (preserve HC context).
+  const meta = await loadMeta(paths.meta);
+  const taxDir = detectHandoffTaxDirection(meta?.sourceTool, opts.tool);
+  const primer =
+    taxDir === "escalate"
+      ? await buildCompactPrimer(paths, opts.tool)
+      : await buildPrimer(paths, opts.tool, Infinity);
 
   // 3. Clipboard — skipped for claude-code (hooks auto-inject)
   const autoInjected = opts.tool === "claude-code";
@@ -97,7 +110,7 @@ export async function switchTool(opts: SwitchOpts): Promise<void> {
   }
 
   // 5. Tell the user what happened
-  printSummary(opts.tool, autoInjected, effectiveNoLaunch);
+  printSummary(opts.tool, autoInjected, effectiveNoLaunch, taxDir);
 }
 
 // ------------- clipboard -------------
@@ -251,7 +264,12 @@ function launchCommand(tool: Tool, cwd: string): [string, string[]] | [null, nul
 
 // ------------- UX -------------
 
-function printSummary(tool: Tool, autoInjected: boolean, noLaunch: boolean): void {
+function printSummary(
+  tool: Tool,
+  autoInjected: boolean,
+  noLaunch: boolean,
+  taxDir: import("./prime.js").HandoffTaxDirection,
+): void {
   const lines: string[] = [];
   lines.push("");
   lines.push(`🔀 handoff → ${tool}`);
@@ -264,6 +282,11 @@ function printSummary(tool: Tool, autoInjected: boolean, noLaunch: boolean): voi
 
   if (!noLaunch) {
     lines.push(`   ✓ launching ${tool}...`);
+  }
+
+  if (taxDir === "escalate") {
+    lines.push(`   ℹ  Handoff tax: escalating to ${tool} — compact primer used (LC trajectory stripped).`);
+    lines.push(`      Override: handoff prime --tool ${tool} | clip`);
   }
 
   if (!autoInjected) {

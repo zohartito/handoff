@@ -11,6 +11,8 @@ import {
   lastNEntries,
   splitEntries,
   COMPACT_THRESHOLD,
+  TOOL_TIER,
+  detectHandoffTaxDirection,
 } from "../src/commands/prime.js";
 import { resolveHandoffPaths } from "../src/format/paths.js";
 
@@ -557,4 +559,50 @@ test("a non-Latin task still yields a populated primer", async () => {
 
   const out = await buildCompactPrimer(paths, "generic");
   assert.match(out, /wrap migrations in a transaction/);
+});
+
+// --- handoff-tax direction detection (Ganz et al. arXiv 2608.24358) ----------
+
+test("TOOL_TIER assigns tier 1 to claude-code and claude-desktop", () => {
+  assert.equal(TOOL_TIER["claude-code"], 1);
+  assert.equal(TOOL_TIER["claude-desktop"], 1);
+});
+
+test("TOOL_TIER assigns lower number to more capable tools (codex > cursor > claude-code)", () => {
+  assert.ok(TOOL_TIER["codex"] > TOOL_TIER["cursor"], "codex tier > cursor tier");
+  assert.ok(TOOL_TIER["cursor"] > TOOL_TIER["claude-code"], "cursor tier > claude-code tier");
+});
+
+test("detectHandoffTaxDirection: codex → claude-code is escalate", () => {
+  assert.equal(detectHandoffTaxDirection("codex", "claude-code"), "escalate");
+});
+
+test("detectHandoffTaxDirection: claude-code → codex is downshift", () => {
+  assert.equal(detectHandoffTaxDirection("claude-code", "codex"), "downshift");
+});
+
+test("detectHandoffTaxDirection: cursor → claude-code is escalate", () => {
+  assert.equal(detectHandoffTaxDirection("cursor", "claude-code"), "escalate");
+});
+
+test("detectHandoffTaxDirection: claude-code → cursor is downshift", () => {
+  assert.equal(detectHandoffTaxDirection("claude-code", "cursor"), "downshift");
+});
+
+test("detectHandoffTaxDirection: gemini → codex is downshift", () => {
+  assert.equal(detectHandoffTaxDirection("gemini", "codex"), "downshift");
+});
+
+test("detectHandoffTaxDirection: same-tier switch is lateral (claude-code → claude-desktop)", () => {
+  assert.equal(detectHandoffTaxDirection("claude-code", "claude-desktop"), "lateral");
+});
+
+test("detectHandoffTaxDirection: codex → codex is lateral", () => {
+  assert.equal(detectHandoffTaxDirection("codex", "codex"), "lateral");
+});
+
+test("detectHandoffTaxDirection: unknown source returns lateral", () => {
+  assert.equal(detectHandoffTaxDirection(undefined, "claude-code"), "lateral");
+  assert.equal(detectHandoffTaxDirection(null, "claude-code"), "lateral");
+  assert.equal(detectHandoffTaxDirection("unknown-tool", "claude-code"), "lateral");
 });
