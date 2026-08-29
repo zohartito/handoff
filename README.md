@@ -205,6 +205,22 @@ The `recurrence` strategy calls the real `rankEntries` (the shipping code is the
 
 **What it measures — and does not.** This is retrieval quality: did the right entries reach the top of the list. It does **not** measure agent behaviour, comprehension, or outcomes, and the shipping ranker is task-blind (it orders by recurrence and recency, never reading the task text). The output states this on every run. See `tests/fixtures/eval/README.md` for the label format.
 
+### `handoff compact [attempts|corrections|decisions|all] [--keep <n>] [--dry-run]`
+
+The log files (`attempts.md`, `corrections.md`, `decisions.md`) are append-only, so on a long-lived project they grow without bound: the same failure gets re-logged every time it recurs (a real `.handoff/` in the wild recorded the identical rate-limit failure nine times), and `prime` re-reads all of it into every future session's context — a linear, ever-growing token tax. `compact` gives the log an explicit **append → compact → archive** lifecycle:
+
+```bash
+handoff compact               # dedupe + archive all three logs
+handoff compact attempts      # just one file
+handoff compact --dry-run     # report what would change, write nothing
+```
+
+- **dedupe** — byte-identical entries collapse into one, annotated with a `**seen:** N×` provenance line that keeps the first and last timestamps.
+- **archive** — once the distinct live set exceeds `--keep` (default 20), the oldest distinct entries are relocated verbatim into a folded `## Archive` section, so the working set a fresh agent reads first stays bounded.
+- **validate** — before the file is replaced, `compact` asserts no distinct entry was dropped and every original event is still counted; if that ever fails it aborts and leaves the file untouched.
+
+Compaction **relocates and counts; it never rewrites an entry's prose.** Lossy summarization would risk dropping a load-bearing error trace — exactly what these files exist to preserve — so the archive is verbatim. It is idempotent: running it again is a no-op until new duplicates accumulate.
+
 ## Keeping `.handoff/` current
 
 `.handoff/` is only useful if it reflects reality. Relying on an agent to run `attempt`/`decide`/`correct` by hand does not hold up — in this repo's own history, 14 entries were logged across two days and then nothing for three and a half months across 13 commits.
