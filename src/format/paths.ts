@@ -21,6 +21,7 @@ export type HandoffPaths = {
   filesManifest: string;
   meta: string;
   captureState: string;
+  wiki: string;
 };
 
 export function resolveHandoffPaths(cwd: string = process.cwd()): HandoffPaths {
@@ -47,5 +48,6 @@ export function resolveHandoffPaths(cwd: string = process.cwd()): HandoffPaths {
     filesManifest: resolve(dir, "files.json"),
     meta: resolve(dir, "meta.json"),
     captureState: resolve(dir, ".capture-state.json"),
+    wiki: resolve(dir, "wiki.md"),
   };
 }

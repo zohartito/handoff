@@ -215,6 +215,7 @@ export async function buildPrimer(
     { label: "Task", path: paths.task },
     { label: "Progress", path: paths.progress },
     { label: "Decisions made", path: paths.decisions },
+    { label: "Project wiki (synthesized knowledge)", path: paths.wiki },
     { label: "Failed attempts (do not repeat)", path: paths.attempts },
     { label: "User corrections (the real rubric)", path: paths.corrections },
     { label: "Identity / style", path: paths.identity },

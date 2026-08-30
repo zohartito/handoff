@@ -23,6 +23,7 @@ import { patterns } from "./commands/patterns.js";
 import { verify } from "./commands/verify.js";
 import { runMcpServer } from "./mcp/server.js";
 import { evaluate } from "./commands/evaluate.js";
+import { wikiAdd, wikiList, wikiDistill } from "./commands/wiki.js";
 
 /**
  * Read + parse the JSON payload Claude Code pipes to a hook on stdin. Returns
@@ -363,6 +364,33 @@ program
       k: Number.isFinite(opts.k) ? opts.k : undefined,
       dir: opts.dir,
     });
+  });
+
+
+const wikiCmd = program
+  .command('wiki')
+  .description('manage project wiki — durable synthesized knowledge for future agents (WikiSkill, arXiv 2608.27454)');
+
+wikiCmd
+  .command('add <title> <body>')
+  .description('add a wiki entry with a title and body')
+  .action(async (title, body) => {
+    await wikiAdd({ title, body });
+  });
+
+wikiCmd
+  .command('list')
+  .description('list all wiki entries in this project')
+  .action(async () => {
+    await wikiList();
+  });
+
+wikiCmd
+  .command('distill')
+  .description('auto-extract lessons from corrections.md and add them as wiki entries')
+  .option('--dry-run', 'show what would be added without writing')
+  .action(async (opts) => {
+    await wikiDistill({ dryRun: opts.dryRun });
   });
 
 await program.parseAsync(process.argv);
