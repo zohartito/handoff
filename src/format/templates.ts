@@ -16,13 +16,14 @@ below **in order** before taking any action.
 1. \`task.md\` — the goal, constraints, success criteria
 2. \`progress.md\` — what's done / in-flight / blocked / next
 3. \`decisions.md\` — key choices already made and why
-4. \`attempts.md\` — approaches that failed and what finally worked
-5. \`corrections.md\` — times the prior agent got it wrong and what the user meant
-6. \`identity.md\` — the user's tone, style, and preferences
-7. \`environment.md\` — OS, shell, versions, git state
-8. \`codebase-map.md\` — key files, conventions, architecture
-9. \`open-loops.md\` — unfinished threads and questions blocked on the user
-10. \`references.md\` — URLs and docs that were consulted
+4. \`wiki.md\` — synthesized project knowledge distilled from experience
+5. \`attempts.md\` — approaches that failed and what finally worked
+6. \`corrections.md\` — times the prior agent got it wrong and what the user meant
+7. \`identity.md\` — the user's tone, style, and preferences
+8. \`environment.md\` — OS, shell, versions, git state
+9. \`codebase-map.md\` — key files, conventions, architecture
+10. \`open-loops.md\` — unfinished threads and questions blocked on the user
+11. \`references.md\` — URLs and docs that were consulted
 
 Raw logs (read only when you need detail):
 - \`ingested-context.md\` — imported summary from a past tool session (created by \`handoff ingest\`)
@@ -211,6 +212,21 @@ ${HEADER_COMMENT}
 <!--
 External docs, URLs, libraries consulted. Saves the next agent from
 re-searching.
+-->
+`,
+  "wiki.md": `# Wiki
+
+${HEADER_COMMENT}
+
+<!--
+Synthesized project knowledge � the wiki layer between raw experience logs
+(attempts.md, corrections.md) and the primer that agents read at handoff.
+
+Each entry is durable, general knowledge: things future agents should know
+about THIS project that are not tied to a specific incident or decision.
+
+Use \`handoff wiki add "<title>" "<body>"\` to add entries.
+Use \`handoff wiki distill\` to auto-extract lessons from corrections.md.
 -->
 `,
 };
