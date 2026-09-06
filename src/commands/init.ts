@@ -60,6 +60,7 @@ function resolveTemplateTarget(paths: ReturnType<typeof resolveHandoffPaths>, na
     "codebase-map.md": paths.codebaseMap,
     "open-loops.md": paths.openLoops,
     "references.md": paths.references,
+    "wiki.md": paths.wiki,
   };
   const target = mapping[name];
   if (!target) throw new Error(`no path mapping for template: ${name}`);
