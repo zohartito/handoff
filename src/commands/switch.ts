@@ -1,13 +1,17 @@
 import { spawn } from "node:child_process";
 import { platform } from "node:os";
 import { resolveHandoffPaths } from "../format/paths.js";
-import { exists } from "../util/fs.js";
+import { exists, readOrEmpty, writeJson } from "../util/fs.js";
 import {
   buildPrimer,
   buildCompactPrimer,
   detectHandoffTaxDirection,
   type Tool,
 } from "./prime.js";
+import {
+  extractConstraints,
+  verifyConstraintsPreserved,
+} from "../format/constraints.js";
 import { loadMeta } from "../format/migrate.js";
 import { save } from "./save.js";
 
@@ -16,7 +20,11 @@ type SwitchOpts = {
   cwd?: string;
   noSave?: boolean;
   noLaunch?: boolean; // copy-only mode
+  compact?: boolean; // opt in to a compact primer (strips prior trajectory)
 };
+
+/** Which primer this switch actually handed off. */
+type PrimerMode = "full" | "compact";
 
 /**
  * Subcommand: `handoff switch <tool>`
@@ -67,25 +75,49 @@ export async function switchTool(opts: SwitchOpts): Promise<void> {
     }
   }
 
-  // 2. Load meta to detect escalation vs downshift (Ganz et al. 2608.24358):
-  //    escalating into a more capable tool → compact primer (strip LC trajectory);
-  //    downshifting or lateral → full primer (preserve HC context).
+  // 2. Detect handoff-tax direction (escalate / downshift / lateral).
+  //    Keyed off the *departing* tool — `lastActiveTool` (stamped by prior
+  //    switches), falling back to `sourceTool` (the init-time tool) on the
+  //    first switch. Direction is advisory only: it drives what we suggest,
+  //    never a silent primer swap. The full primer is the default so a switch
+  //    NEVER silently drops continuity; the compact (lossy) primer is used only
+  //    when the user explicitly opts in with --compact.
   const meta = await loadMeta(paths.meta);
-  const taxDir = detectHandoffTaxDirection(meta?.sourceTool, opts.tool);
-  const primer =
-    taxDir === "escalate"
-      ? await buildCompactPrimer(paths, opts.tool)
-      : await buildPrimer(paths, opts.tool, Infinity);
+  const departingTool = meta?.lastActiveTool ?? meta?.sourceTool;
+  const taxDir = detectHandoffTaxDirection(departingTool, opts.tool);
 
-  // 3. Clipboard — skipped for claude-code (hooks auto-inject)
+  const { primer, mode: primerMode, constraintFallback } = await selectPrimer(
+    paths,
+    opts.tool,
+    opts.compact === true,
+  );
+
+  // 3. Clipboard — skipped for claude-code (hooks auto-inject the FULL primer
+  //    via `handoff hook session-start`, independent of this command). For that
+  //    target the compact primer cannot be delivered through the hook, so we do
+  //    not claim it was; --compact for claude-code is surfaced as a no-op below.
   const autoInjected = opts.tool === "claude-code";
   if (!autoInjected) {
     const copied = await writeClipboard(primer);
     if (!copied) {
+      const compactFlag = primerMode === "compact" ? " --compact" : "";
       process.stderr.write(
         "⚠  couldn't copy to clipboard automatically.\n" +
-          `   run manually: handoff prime --tool ${opts.tool} | ${clipCommandName()}\n`,
+          `   run manually: handoff prime --tool ${opts.tool}${compactFlag} | ${clipCommandName()}\n`,
       );
+    }
+  }
+
+  // 3b. Stamp the arriving tool as the new active tool, so the *next* switch
+  //     classifies its direction against the tool actually handing off (not the
+  //     immutable init-time source). Best-effort: a failed stamp must not abort
+  //     a handoff that already copied/launched.
+  if (meta) {
+    meta.lastActiveTool = opts.tool;
+    try {
+      await writeJson(paths.meta, meta);
+    } catch {
+      /* non-fatal: direction tracking degrades to sourceTool next time */
     }
   }
 
@@ -109,8 +141,53 @@ export async function switchTool(opts: SwitchOpts): Promise<void> {
     }
   }
 
-  // 5. Tell the user what happened
-  printSummary(opts.tool, autoInjected, effectiveNoLaunch, taxDir);
+  // 5. Tell the user what happened — including exactly which primer was chosen
+  //    and how to get the other one.
+  printSummary(opts.tool, autoInjected, effectiveNoLaunch, taxDir, {
+    mode: primerMode,
+    requestedCompact: opts.compact === true,
+    constraintFallback,
+    length: primer.length,
+  });
+}
+
+/**
+ * Choose the primer to hand off. Default is the FULL primer — a switch must
+ * never silently drop continuity. The compact primer is lossy by design (it
+ * truncates the task, caps recent entries, and sheds to a hard budget), so it
+ * is used only when the user explicitly opts in with --compact.
+ *
+ * Even then we refuse to lose a user *guardrail*: after building the compact
+ * primer we run the same constraint check `handoff prime` uses, and if a
+ * standing rule would be dropped we fall back to the full primer and report it.
+ */
+export async function selectPrimer(
+  paths: ReturnType<typeof resolveHandoffPaths>,
+  tool: Tool,
+  requestedCompact: boolean,
+): Promise<{ primer: string; mode: PrimerMode; constraintFallback: boolean }> {
+  if (!requestedCompact) {
+    return {
+      primer: await buildPrimer(paths, tool, Infinity),
+      mode: "full",
+      constraintFallback: false,
+    };
+  }
+
+  const compact = await buildCompactPrimer(paths, tool);
+  const constraints = extractConstraints(await readOrEmpty(paths.corrections));
+  const { ok } = verifyConstraintsPreserved(compact, constraints);
+  if (ok) {
+    return { primer: compact, mode: "compact", constraintFallback: false };
+  }
+
+  // Compaction would have shed a user guardrail. Opt-in or not, we do not hand
+  // off a primer missing a constraint — fall back to the full primer and say so.
+  return {
+    primer: await buildPrimer(paths, tool, Infinity),
+    mode: "full",
+    constraintFallback: true,
+  };
 }
 
 // ------------- clipboard -------------
@@ -269,24 +346,63 @@ function printSummary(
   autoInjected: boolean,
   noLaunch: boolean,
   taxDir: import("./prime.js").HandoffTaxDirection,
+  primer: {
+    mode: PrimerMode;
+    requestedCompact: boolean;
+    constraintFallback: boolean;
+    length: number;
+  },
 ): void {
+  const clip = clipCommandName();
   const lines: string[] = [];
   lines.push("");
   lines.push(`🔀 handoff → ${tool}`);
 
   if (autoInjected) {
-    lines.push(`   ✓ primer will auto-inject via Claude Code's SessionStart hook`);
+    // Claude Code injects the FULL primer via its hook, regardless of --compact.
+    lines.push(`   ✓ full primer will auto-inject via Claude Code's SessionStart hook`);
+    if (primer.requestedCompact) {
+      lines.push(
+        `   ℹ  --compact does not apply to Claude Code (its hook injects the full primer).`,
+      );
+      lines.push(`      For a compact context: handoff prime --tool ${tool} --compact`);
+    }
+  } else if (primer.mode === "compact") {
+    lines.push(
+      `   ✓ compact primer copied to clipboard (${primer.length} chars — prior trajectory stripped)`,
+    );
+    lines.push(`      Full primer: handoff prime --tool ${tool} | ${clip}`);
   } else {
-    lines.push(`   ✓ primer copied to clipboard`);
+    lines.push(`   ✓ full primer copied to clipboard (${primer.length} chars)`);
+  }
+
+  // If --compact was asked for but a user guardrail would have been dropped, we
+  // used the full primer instead — never silently. Say so.
+  if (primer.constraintFallback) {
+    lines.push(
+      `   ⚠  --compact skipped: the compact primer would have dropped a user constraint,`,
+    );
+    lines.push(`      so the full primer was used to preserve it.`);
   }
 
   if (!noLaunch) {
     lines.push(`   ✓ launching ${tool}...`);
   }
 
-  if (taxDir === "escalate") {
-    lines.push(`   ℹ  Handoff tax: escalating to ${tool} — compact primer used (LC trajectory stripped).`);
-    lines.push(`      Override: handoff prime --tool ${tool} | clip`);
+  // Escalation is advisory only: point the user at the explicit compact option
+  // rather than compacting for them. Nothing here has been dropped.
+  if (taxDir === "escalate" && primer.mode === "full" && !primer.requestedCompact) {
+    lines.push(
+      `   ℹ  Handoff tax: escalating to a more capable ${tool} — full primer used by default.`,
+    );
+    if (autoInjected) {
+      lines.push(`      To hand off a compact primer instead: handoff prime --tool ${tool} --compact`);
+    } else {
+      lines.push(
+        `      To strip the prior trajectory: handoff switch ${tool} --compact` +
+          `  (or: handoff prime --tool ${tool} --compact | ${clip})`,
+      );
+    }
   }
 
   if (!autoInjected) {

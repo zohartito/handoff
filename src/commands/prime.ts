@@ -29,10 +29,12 @@ export const VALID_TOOLS: ReadonlySet<string> = new Set([
 ]);
 
 // Capability tier per tool — lower number = more capable.
-// Ganz et al. (arXiv 2608.24358) show that switching direction has asymmetric
-// cost: escalating into a more capable tool benefits from stripping the prior
-// LC trajectory (compact primer), while downshifting is best served by
-// preserving the full HC context (full primer).
+// Rationale (the "handoff tax"): switching direction has asymmetric cost.
+// Escalating into a more capable tool can benefit from stripping the prior
+// lower-capability trajectory (a compact primer), while downshifting is best
+// served by preserving the full higher-capability context (the full primer).
+// handoff never applies this automatically — it only surfaces the direction and
+// lets the user opt into a compact primer explicitly (see `switch`/`prime --compact`).
 export const TOOL_TIER: Readonly<Record<Tool, number>> = {
   "claude-code": 1,
   "claude-desktop": 1,

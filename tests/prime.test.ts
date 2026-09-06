@@ -561,7 +561,7 @@ test("a non-Latin task still yields a populated primer", async () => {
   assert.match(out, /wrap migrations in a transaction/);
 });
 
-// --- handoff-tax direction detection (Ganz et al. arXiv 2608.24358) ----------
+// --- handoff-tax direction detection --------------------------------------
 
 test("TOOL_TIER assigns tier 1 to claude-code and claude-desktop", () => {
   assert.equal(TOOL_TIER["claude-code"], 1);
