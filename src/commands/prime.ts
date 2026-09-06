@@ -28,6 +28,42 @@ export const VALID_TOOLS: ReadonlySet<string> = new Set([
   "generic",
 ]);
 
+// Capability tier per tool — lower number = more capable.
+// Rationale (the "handoff tax"): switching direction has asymmetric cost.
+// Escalating into a more capable tool can benefit from stripping the prior
+// lower-capability trajectory (a compact primer), while downshifting is best
+// served by preserving the full higher-capability context (the full primer).
+// handoff never applies this automatically — it only surfaces the direction and
+// lets the user opt into a compact primer explicitly (see `switch`/`prime --compact`).
+export const TOOL_TIER: Readonly<Record<Tool, number>> = {
+  "claude-code": 1,
+  "claude-desktop": 1,
+  "cursor": 2,
+  "gemini": 2,
+  "codex": 3,
+  "generic": 2,
+};
+
+export type HandoffTaxDirection = "escalate" | "downshift" | "lateral";
+
+/**
+ * Classify the direction of a tool switch for handoff-tax-aware primer selection.
+ * Returns "escalate" when the target tool is more capable than the source
+ * (lower TOOL_TIER), "downshift" when less capable, or "lateral" when tiers
+ * are equal or the source tool is unknown.
+ */
+export function detectHandoffTaxDirection(
+  sourceTool: string | null | undefined,
+  targetTool: Tool,
+): HandoffTaxDirection {
+  if (!sourceTool || !(sourceTool in TOOL_TIER)) return "lateral";
+  const fromTier = TOOL_TIER[sourceTool as Tool];
+  const toTier = TOOL_TIER[targetTool];
+  if (toTier < fromTier) return "escalate";
+  if (toTier > fromTier) return "downshift";
+  return "lateral";
+}
+
 /**
  * Threshold at which --max-chars implicitly switches to compact mode.
  * The full primer has fixed framing overhead plus whatever the user has

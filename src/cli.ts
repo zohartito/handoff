@@ -241,11 +241,13 @@ program
   .description("hand off to another tool: save + prime + clipboard + launch (tool: claude-code | claude-desktop | cursor | codex | gemini)")
   .option("--no-save", "skip `handoff save` before switching")
   .option("--no-launch", "copy primer to clipboard but don't launch the tool")
+  .option("--compact", "hand off a compact primer (strips the prior trajectory; lossy — opt-in)")
   .action(async (tool, opts) => {
     await switchTool({
       tool,
       noSave: opts.save === false,
       noLaunch: opts.launch === false,
+      compact: opts.compact === true,
     });
   });
 
