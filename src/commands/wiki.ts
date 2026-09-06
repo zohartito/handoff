@@ -1,6 +1,7 @@
 import { resolveHandoffPaths } from "../format/paths.js";
 import { appendLine, exists, readOrEmpty } from "../util/fs.js";
 import { withFileLock } from "../util/lock.js";
+import { splitEntries, isSuperseded } from "./ranking.js";
 
 export interface WikiEntry {
   title: string;
@@ -105,31 +106,45 @@ export async function wikiDistill(opts: WikiDistillOpts = {}): Promise<WikiDisti
     return { added: 0, skipped: 0, entries: [] };
   }
 
-  const [correctionsRaw, wikiRaw] = await Promise.all([
-    readOrEmpty(paths.corrections),
-    readOrEmpty(paths.wiki),
-  ]);
-
+  // corrections.md is a stable input here (distill never writes it), so it can
+  // be read outside the lock. wiki.md must not: the read, the dedup decision,
+  // and the append have to be one atomic read-modify-write, or two concurrent
+  // `distill` runs each read the same pre-update wiki, both decide the same
+  // lessons are missing, and serialize only their appends — producing duplicate
+  // durable entries despite the idempotence guarantee.
+  const correctionsRaw = await readOrEmpty(paths.corrections);
   const lessons = extractLessons(correctionsRaw);
-  const existingWiki = parseWikiEntries(wikiRaw);
-  const existingBodies = new Set(existingWiki.map((e) => normalizeLesson(e.body)));
-
-  const toAdd: WikiEntry[] = [];
   const ts = new Date().toISOString();
 
-  for (const lesson of lessons) {
-    const normalized = normalizeLesson(lesson);
-    if (existingBodies.has(normalized)) continue;
-    // Deduplicate within this batch too
-    if (toAdd.some((e) => normalizeLesson(e.body) === normalized)) continue;
-    toAdd.push({ title: deriveTitle(lesson), body: lesson, addedAt: ts });
-    existingBodies.add(normalized);
-  }
+  const computeToAdd = (wikiRaw: string): WikiEntry[] => {
+    const existingBodies = new Set(
+      parseWikiEntries(wikiRaw).map((e) => normalizeLesson(e.body)),
+    );
+    const out: WikiEntry[] = [];
+    for (const lesson of lessons) {
+      const normalized = normalizeLesson(lesson);
+      if (existingBodies.has(normalized)) continue;
+      // Deduplicate within this batch too.
+      if (out.some((e) => normalizeLesson(e.body) === normalized)) continue;
+      out.push({ title: deriveTitle(lesson), body: lesson, addedAt: ts });
+      existingBodies.add(normalized);
+    }
+    return out;
+  };
 
-  if (!opts.dryRun && toAdd.length > 0) {
-    const block = toAdd.map((e) => "\n" + formatWikiEntry(e)).join("");
-    await withFileLock(paths.wiki, async () => {
-      await appendLine(paths.wiki, block);
+  let toAdd: WikiEntry[];
+  if (opts.dryRun) {
+    // No write, so no lock: just report what a real run would add right now.
+    toAdd = computeToAdd(await readOrEmpty(paths.wiki));
+  } else {
+    // Re-read, dedup, and append as one operation under the lock.
+    toAdd = await withFileLock(paths.wiki, async () => {
+      const entries = computeToAdd(await readOrEmpty(paths.wiki));
+      if (entries.length > 0) {
+        const block = entries.map((e) => "\n" + formatWikiEntry(e)).join("");
+        await appendLine(paths.wiki, block);
+      }
+      return entries;
     });
   }
 
@@ -198,14 +213,25 @@ export function parseWikiEntries(raw: string): WikiEntry[] {
 /**
  * Extract the **lesson:** value from each corrections.md entry.
  * Lesson lines look like: `**lesson:** some text`
+ *
+ * Superseded entries are skipped. When a keyed correction is replaced,
+ * `revokeActiveByKey` leaves the old entry in place with a `**superseded:** true`
+ * marker for audit — the same treatment ranking, retrieval, and constraint
+ * extraction give it. Promoting an obsolete lesson into the durable wiki would
+ * resurrect a rule the user has already retired, so we split into entries and
+ * drop the superseded ones before pulling lessons.
  */
 export function extractLessons(correctionsRaw: string): string[] {
   const lessons: string[] = [];
   const lessonRe = /^\*\*lesson:\*\*\s+(.+)/gm;
-  let m: RegExpExecArray | null;
-  while ((m = lessonRe.exec(correctionsRaw)) !== null) {
-    const lesson = m[1]!.trim();
-    if (lesson) lessons.push(lesson);
+  for (const entry of splitEntries(correctionsRaw)) {
+    if (isSuperseded(entry)) continue;
+    let m: RegExpExecArray | null;
+    lessonRe.lastIndex = 0;
+    while ((m = lessonRe.exec(entry)) !== null) {
+      const lesson = m[1]!.trim();
+      if (lesson) lessons.push(lesson);
+    }
   }
   return lessons;
 }

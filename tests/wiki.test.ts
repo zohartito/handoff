@@ -187,3 +187,63 @@ test('wikiDistill - multiple lessons, deduplicates within batch', async () => {
   assert.equal(result.added, 2, 'only 2 unique lessons');
   assert.equal(result.skipped, 1, '1 duplicate within batch');
 });
+
+// --- Codex review fixes ------------------------------------------------------
+
+test('extractLessons - skips superseded corrections', () => {
+  const raw =
+    '# Corrections\n\n' +
+    '## 2026-01-01T00:00:00Z\n\n' +
+    '**agent did:** used the old rule\n\n' +
+    '**lesson:** the obsolete lesson\n\n' +
+    '**superseded:** true\n\n---\n\n' +
+    '## 2026-01-02T00:00:00Z\n\n' +
+    '**agent did:** used the new rule\n\n' +
+    '**lesson:** the current lesson\n\n---\n';
+  const lessons = extractLessons(raw);
+  assert.deepEqual(lessons, ['the current lesson']);
+});
+
+test('wikiDistill - superseded lessons never reach the wiki', async () => {
+  const paths = scaffoldHandoff();
+  writeFileSync(
+    paths.corrections,
+    '# Corrections\n\n' +
+      '## 2026-01-01T00:00:00Z\n\n**lesson:** retired rule\n\n**superseded:** true\n\n---\n\n' +
+      '## 2026-01-02T00:00:00Z\n\n**lesson:** live rule\n\n---\n',
+  );
+  const origLog = console.log;
+  console.log = () => {};
+  let res;
+  try {
+    res = await wikiDistill({ cwd: paths.root });
+  } finally {
+    console.log = origLog;
+  }
+  assert.equal(res.added, 1);
+  const bodies = parseWikiEntries(readFileSync(paths.wiki, 'utf8')).map((e) => e.body);
+  assert.ok(bodies.includes('live rule'));
+  assert.ok(!bodies.includes('retired rule'), 'superseded lesson must not be distilled');
+});
+
+test('wikiDistill - concurrent runs do not create duplicate entries (read+dedup+append under lock)', async () => {
+  const paths = scaffoldHandoff();
+  writeFileSync(
+    paths.corrections,
+    '# Corrections\n\n## 2026-01-02T00:00:00Z\n\n**lesson:** exactly one durable rule\n\n---\n',
+  );
+  const origLog = console.log;
+  console.log = () => {};
+  try {
+    // Fire two distills at once against the same wiki.md.
+    await Promise.all([
+      wikiDistill({ cwd: paths.root }),
+      wikiDistill({ cwd: paths.root }),
+    ]);
+  } finally {
+    console.log = origLog;
+  }
+  const entries = parseWikiEntries(readFileSync(paths.wiki, 'utf8'));
+  const matching = entries.filter((e) => e.body === 'exactly one durable rule');
+  assert.equal(matching.length, 1, 'the lesson must appear exactly once, not once per concurrent run');
+});
