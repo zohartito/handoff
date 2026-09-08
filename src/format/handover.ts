@@ -146,6 +146,31 @@ export async function computeHandoverRecord(
 }
 
 /**
+ * Residual ratio above which model-compressed notes are at elevated risk of
+ * degrading on a model upgrade. Goyal & Ray (arXiv 2609.05339v1) show that
+ * compressed notes lose up to 13.28pp accuracy depending on migration direction;
+ * raw source history (.handoff/transcript.jsonl) is the only reliable recovery
+ * path (34/48 cases). Store-only repair — re-running prime on the same
+ * compressed data — failed in all 48 benchmark cases.
+ */
+export const HIGH_RESIDUAL_THRESHOLD = 0.3;
+
+/**
+ * Recovery note for when compressed notes have dropped entries. Returns ""
+ * when nothing was dropped or residual is below the high-risk threshold.
+ * Phrased as information, not an instruction, so it passes the trust boundary.
+ */
+export function renderRecoveryNote(rec: HandoverRecord): string {
+  if (rec.loss.residualRatio <= HIGH_RESIDUAL_THRESHOLD) return "";
+  const pct = Math.round(rec.loss.residualRatio * 100);
+  return (
+    `_${pct}% of entries were not carried. If these notes have degraded on a model` +
+    ` upgrade, read \`.handoff/transcript.jsonl\` for raw history —` +
+    ` store-only re-prime does not recover them (Goyal & Ray arXiv 2609.05339v1)._`
+  );
+}
+
+/**
  * One-line loss indicator surfaced in the primer. Phrased as information (the
  * primer trust boundary treats `.handoff/` content as untrusted data, and this
  * line is generated stats, not a directive).
@@ -215,5 +240,21 @@ export function renderHandoverRecord(rec: HandoverRecord): string {
     `- entries dropped: ${rec.loss.entriesDropped} of ${rec.loss.entriesTotal} (${pct}% residual)`,
     `- chars truncated: ${rec.loss.charsTruncated}`,
     ``,
+    ...(rec.loss.residualRatio > 0
+      ? [
+          `## Recovery guidance`,
+          ``,
+          `Model-compressed notes (this primer) degrade asymmetrically on model upgrade —`,
+          `up to 13.28pp accuracy loss depending on migration direction (Goyal & Ray,`,
+          `arXiv 2609.05339v1). When residual is high, the reliable recovery path is`,
+          `raw source history at \`.handoff/transcript.jsonl\`. Store-only repair`,
+          `(re-running prime on the same compressed data) failed in all 48 benchmark cases.`,
+          ``,
+          `The wiki layer (\`.handoff/wiki.md\`) uses a fixed schema and is nearly immune`,
+          `to model-upgrade degradation (±0.0020 in the same benchmark); treat wiki`,
+          `entries as the highest-fidelity persistent memory.`,
+          ``,
+        ]
+      : []),
   ].join("\n");
 }

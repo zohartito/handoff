@@ -8,6 +8,8 @@ import {
   computeHandoverRecord,
   renderLossLine,
   renderHandoverRecord,
+  renderRecoveryNote,
+  HIGH_RESIDUAL_THRESHOLD,
 } from "../src/format/handover.js";
 import { buildCompactPrimer, buildSubagentPrimer } from "../src/commands/prime.js";
 import { save } from "../src/commands/save.js";
@@ -129,6 +131,71 @@ test("renderHandoverRecord names all three tiers and the loss term", async () =>
   assert.match(doc, /## Compressed/);
   assert.match(doc, /## Residual/);
   assert.match(doc, /## Loss term/);
+});
+
+test("renderRecoveryNote returns empty string when residualRatio is 0", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "handoff-recovery-empty-"));
+  mkdirSync(join(dir, ".handoff"), { recursive: true });
+  const paths = resolveHandoffPaths(dir);
+  writeFileSync(paths.task, "# Task\n\nnothing\n");
+  writeFileSync(paths.corrections, "# Corrections\n");
+  writeFileSync(paths.attempts, "# Attempts\n");
+  const rec = await computeHandoverRecord(paths, "compact");
+  assert.equal(rec.loss.residualRatio, 0);
+  assert.equal(renderRecoveryNote(rec), "");
+});
+
+test("renderRecoveryNote returns empty string when residualRatio is at or below threshold", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "handoff-recovery-low-"));
+  mkdirSync(join(dir, ".handoff"), { recursive: true });
+  const paths = resolveHandoffPaths(dir);
+  // 3 corrections: compact keeps latest 3 verbatim → 0 residual → ratio 0
+  writeFileSync(
+    paths.corrections,
+    [
+      mkCorrection("2026-01-01T00:00:00Z", "did x", "rule one"),
+      mkCorrection("2026-01-02T00:00:00Z", "did y", "rule two"),
+      mkCorrection("2026-01-03T00:00:00Z", "did z", "rule three"),
+    ].join(""),
+  );
+  writeFileSync(paths.attempts, "# Attempts\n");
+  writeFileSync(paths.task, "# Task\n\nsmall\n");
+  const rec = await computeHandoverRecord(paths, "compact");
+  // 3 corrections, compact recentN=3, so all fit verbatim → residual=0 → ratio=0
+  assert.ok(rec.loss.residualRatio <= HIGH_RESIDUAL_THRESHOLD);
+  assert.equal(renderRecoveryNote(rec), "");
+});
+
+test("renderRecoveryNote returns a note citing transcript.jsonl when residualRatio > threshold", async () => {
+  const rec = await computeHandoverRecord(scaffold(), "compact");
+  // scaffold has 8 corrections, compact keeps 3 → residualRatio = 5/8 = 0.625 > 0.3
+  assert.ok(rec.loss.residualRatio > HIGH_RESIDUAL_THRESHOLD);
+  const note = renderRecoveryNote(rec);
+  assert.ok(note.length > 0, "note must be non-empty for high residual");
+  assert.ok(note.includes("transcript.jsonl"), "must point to raw history");
+  assert.ok(note.includes("2609.05339"), "must cite the paper");
+});
+
+test("renderHandoverRecord includes Recovery guidance section when residual > 0", async () => {
+  const rec = await computeHandoverRecord(scaffold(), "compact");
+  assert.ok(rec.loss.residualRatio > 0);
+  const doc = renderHandoverRecord(rec);
+  assert.match(doc, /## Recovery guidance/);
+  assert.match(doc, /transcript\.jsonl/);
+  assert.match(doc, /2609\.05339/);
+  assert.match(doc, /wiki\.md/);
+});
+
+test("renderHandoverRecord omits Recovery guidance section when residual is 0", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "handoff-recovery-zero-"));
+  mkdirSync(join(dir, ".handoff"), { recursive: true });
+  const paths = resolveHandoffPaths(dir);
+  writeFileSync(paths.task, "# Task\n\nnothing\n");
+  writeFileSync(paths.corrections, "# Corrections\n");
+  writeFileSync(paths.attempts, "# Attempts\n");
+  const rec = await computeHandoverRecord(paths, "compact");
+  const doc = renderHandoverRecord(rec);
+  assert.ok(!doc.includes("Recovery guidance"), "no recovery section when nothing was dropped");
 });
 
 test("save writes .handoff/handover-record.md", async () => {
