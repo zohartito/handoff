@@ -71,16 +71,35 @@ export function entryId(entry: string): string | null {
 }
 
 /**
+ * Characters engineered to be invisible (or near-invisible) to a human
+ * reading a diff or rendered file, but fully legible to a model reading raw
+ * text: zero-width spaces/joiners, bidi-control overrides that can visually
+ * reorder surrounding text, and the Unicode Tag block (U+E0000-U+E007F) used
+ * for "ASCII smuggling" prompt injection. A PR that plants one of these in
+ * `corrections.md` would sail through human review and still reach the agent.
+ */
+const INVISIBLE_UNICODE = /[​-‏‪-‮⁠-⁤⁦-⁩﻿\u{E0000}-\u{E007F}]/gu;
+
+/** Strip {@link INVISIBLE_UNICODE} characters from a string. */
+export function stripInvisibleUnicode(s: string): string {
+  return s.replace(INVISIBLE_UNICODE, "");
+}
+
+/**
  * Split a markdown doc (`attempts.md`, `corrections.md`) into its top-level
  * entries. Entries are appended by `handoff attempt|correct` using a
  * `## <ISO-timestamp>` header followed by a trailing `---`. We split on
  * `## ` headers when present; fall back to `\n---\n` separators otherwise.
  *
  * Returns entries in original order, with the file's `# Title` + HTML
- * comment banner stripped.
+ * comment banner stripped, and any invisible Unicode neutralised — every
+ * downstream consumer (ranking, constraints, obsidian sync, handover) reads
+ * through this one choke point.
  */
 export function splitEntries(raw: string): string[] {
-  const cleaned = raw.replace(/<!--[\s\S]*?-->/g, "").replace(/^#\s+[^\n]*\n/, "");
+  const cleaned = stripInvisibleUnicode(raw)
+    .replace(/<!--[\s\S]*?-->/g, "")
+    .replace(/^#\s+[^\n]*\n/, "");
   const trimmed = cleaned.trim();
   if (!trimmed) return [];
 
