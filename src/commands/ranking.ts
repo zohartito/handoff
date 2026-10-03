@@ -73,12 +73,23 @@ export function entryId(entry: string): string | null {
 /**
  * Characters engineered to be invisible (or near-invisible) to a human
  * reading a diff or rendered file, but fully legible to a model reading raw
- * text: zero-width spaces/joiners, bidi-control overrides that can visually
- * reorder surrounding text, and the Unicode Tag block (U+E0000-U+E007F) used
- * for "ASCII smuggling" prompt injection. A PR that plants one of these in
- * `corrections.md` would sail through human review and still reach the agent.
+ * text. A PR that plants one of these in `corrections.md` would sail through
+ * human review and still reach the agent.
+ *
+ *   U+200B ZERO WIDTH SPACE, U+200C ZERO WIDTH NON-JOINER
+ *   U+200E LEFT-TO-RIGHT MARK, U+200F RIGHT-TO-LEFT MARK
+ *   U+202A-U+202E bidi embeddings/overrides (LRE, RLE, PDF, LRO, RLO)
+ *   U+2060 WORD JOINER, U+2061-U+2064 invisible math operators
+ *   U+2066-U+2069 bidi isolates (LRI, RLI, FSI, PDI)
+ *   U+FEFF ZERO WIDTH NO-BREAK SPACE (BOM)
+ *   U+E0000-U+E007F Tag block ("ASCII smuggling" prompt injection)
+ *
+ * Deliberately NOT stripped: U+200D ZERO WIDTH JOINER and U+FE0F VARIATION
+ * SELECTOR-16, which glue emoji sequences together (a family emoji is three
+ * people joined by ZWJ); removing them would split one emoji into several.
  */
-const INVISIBLE_UNICODE = /[​-‏‪-‮⁠-⁤⁦-⁩﻿\u{E0000}-\u{E007F}]/gu;
+const INVISIBLE_UNICODE =
+  /[\u200B\u200C\u200E\u200F\u202A-\u202E\u2060-\u2064\u2066-\u2069\uFEFF\u{E0000}-\u{E007F}]/gu;
 
 /** Strip {@link INVISIBLE_UNICODE} characters from a string. */
 export function stripInvisibleUnicode(s: string): string {
