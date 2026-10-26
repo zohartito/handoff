@@ -40,7 +40,9 @@ test("spawnDetached reports failure when the process dies immediately", async ()
   // old 100ms optimistic resolve claimed success anyway, so `handoff switch
   // codex` printed "launching..." and told the user to paste into a tool that
   // was already gone.
-  const ok = await spawnDetached(process.execPath, ["-e", "process.exit(1)"], process.cwd(), 800);
+  // A loaded Windows runner can take >800ms to start Node. Allow startup time
+  // while still requiring the exit event to report failure before the deadline.
+  const ok = await spawnDetached(process.execPath, ["-e", "process.exit(1)"], process.cwd(), 5000);
   assert.equal(ok, false, "a process that exits non-zero must report failure");
 });
 
