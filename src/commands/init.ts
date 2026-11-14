@@ -44,7 +44,7 @@ export async function init(opts: InitOpts = {}): Promise<void> {
   console.log("     handoff attempt \"tried X\" --error \"trace\" --fix \"what worked\"");
   console.log("     handoff decide \"chose X\" --because \"reason\"");
   console.log("     handoff correct \"what I did\" --user-said \"their feedback\"");
-  console.log("  4. when handing off: handoff prime <target-tool>");
+  console.log("  4. when handing off: handoff prime --tool <target-tool>");
 }
 
 function resolveTemplateTarget(paths: ReturnType<typeof resolveHandoffPaths>, name: string): string {
