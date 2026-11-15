@@ -111,6 +111,24 @@ test("evidence rejects symlink escapes at logging and detects a later escape", a
   assert.ok((await buildPrimer(paths, "generic", Infinity)).includes(STALE_ANNOTATION));
 });
 
+test("evidence that can no longer be read is flagged, and the primer is still produced", async (t) => {
+  const { root, paths } = await fixture(t);
+  const file = join(root, "notes.txt");
+  await fs.writeFile(file, "basis");
+  await decide({ cwd: root, choice: "use pymupdf", evidence: ["notes.txt"] });
+  await fs.unlink(file);
+  try {
+    await fs.symlink("notes.txt", file); // a symlink to itself: realpath fails with ELOOP
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EPERM") return t.skip("symlinks unavailable");
+    throw error;
+  }
+  assert.equal((await collectEvidenceStatus(paths))[0]!.evidence[0]!.status, "UNREADABLE");
+  const primer = await buildPrimer(paths, "generic", Infinity);
+  assert.ok(primer.includes(STALE_ANNOTATION));
+  assert.ok(primer.includes("use pymupdf"));
+});
+
 test("evidence resolves from the supplied project root, not the process directory", async (t) => {
   const { root } = await fixture(t);
   const fromRelativeRoot = await captureEvidence(relative(process.cwd(), root), ["pyproject.toml"]);

@@ -98,7 +98,7 @@ handoff correct "was about to add a new ORM layer" \
   --lesson "this project values minimal deps over abstraction"
 ```
 
-Both commands accept `--evidence <paths...>` (also `evidence: string[]` on their MCP tools) to record each file's repo-relative path and the first 16 hex characters of its SHA-256. Paths resolve from the directory containing `.handoff/`; files must exist and remain inside that directory, including symlink targets. `handoff stale` reports OK, CHANGED, or MISSING for each active entry's evidence; add `--json` for structured output or `--check` to exit 1 on CHANGED/MISSING. Primers mark affected entries `(evidence changed: re-check before trusting)`. After reviewing the evidence, re-log with the same `--key` to supersede the old entry and capture fresh hashes.
+Both commands accept `--evidence <paths...>` (also `evidence: string[]` on their MCP tools) to record each file's repo-relative path and the first 16 hex characters of its SHA-256. Paths resolve from the directory containing `.handoff/`; files must exist and remain inside that directory, including symlink targets. `handoff stale` reports OK, CHANGED, MISSING, or UNREADABLE (the file exists but cannot be read, for example after a permissions change) for each active entry's evidence; add `--json` for structured output or `--check` to exit 1 on anything but OK. Primers mark affected entries `(evidence changed: re-check before trusting)`. After reviewing the evidence, re-log with the same `--key` to supersede the old entry and capture fresh hashes.
 
 ### `handoff prime [--tool <tool>] [--max-chars <n>]`
 

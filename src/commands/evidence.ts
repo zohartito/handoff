@@ -4,7 +4,7 @@ import { isAbsolute, relative, resolve, sep } from "node:path";
 import { entryId, isSuperseded, splitEntries } from "./ranking.js";
 
 export type Evidence = { path: string; hash: string };
-export type EvidenceStatus = "OK" | "CHANGED" | "MISSING";
+export type EvidenceStatus = "OK" | "CHANGED" | "MISSING" | "UNREADABLE";
 export type EvidenceCheck = Evidence & { status: EvidenceStatus; currentHash?: string };
 export const STALE_ANNOTATION = " (evidence changed: re-check before trusting)";
 
@@ -55,6 +55,9 @@ export async function checkEvidence(root: string, entry: string): Promise<Eviden
       if (code === "ENOENT" || code === "ENOTDIR") return { ...e, status: "MISSING" };
       // A file replaced by a directory or an out-of-root symlink is changed.
       if (error instanceof EvidencePathError) return { ...e, status: "CHANGED" };
+      // Any other filesystem error (permissions, a symlink loop) means the evidence
+      // cannot be verified. Flag the entry; never let one file abort the primer.
+      if (typeof code === "string") return { ...e, status: "UNREADABLE" };
       throw error;
     }
   }));

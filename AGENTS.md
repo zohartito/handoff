@@ -46,7 +46,8 @@ boundary: no lossy summarization of load-bearing traces). Idempotent.
 ## Evidence freshness
 `decide` and `correct` accept `--evidence <paths...>` (MCP: `evidence: string[]`).
 `src/commands/evidence.ts` hashes repo-contained files and checks recorded hashes;
-`handoff stale --check` exits 1 for changed or missing evidence on active entries.
+`handoff stale --check` exits 1 for changed, missing or unreadable evidence on active entries;
+an unreadable file flags its entry and never aborts a primer.
 Primers annotate stale evidence at render time without changing stored entries.
 Regression coverage lives in `tests/evidence.test.ts`.
 
