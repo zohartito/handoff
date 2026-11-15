@@ -2,6 +2,7 @@ import { resolveHandoffPaths } from "../format/paths.js";
 import { appendLine, exists, readOrEmpty, writeFileSafe } from "../util/fs.js";
 import { withFileLock } from "../util/lock.js";
 import { normalizeKey, revokeActiveByKey } from "./revocation.js";
+import { captureEvidence } from "./evidence.js";
 
 type DecideOpts = {
   choice: string;
@@ -10,6 +11,7 @@ type DecideOpts = {
   cwd?: string;
   /** Fact key: a newer entry under the same key revokes older active ones. */
   key?: string;
+  evidence?: string[];
 };
 
 export async function decide(opts: DecideOpts): Promise<void> {
@@ -22,6 +24,7 @@ export async function decide(opts: DecideOpts): Promise<void> {
     return;
   }
 
+  const evidence = await captureEvidence(paths.root, opts.evidence);
   const key = opts.key?.trim() ? normalizeKey(opts.key) : undefined;
   const ts = new Date().toISOString();
   const entry = [
@@ -33,6 +36,7 @@ export async function decide(opts: DecideOpts): Promise<void> {
     opts.alternatives && opts.alternatives.length > 0
       ? `\n**considered:** ${opts.alternatives.join(", ")}`
       : null,
+    ...evidence,
     ``,
     `---`,
     ``,

@@ -8,6 +8,7 @@ import { status } from "./commands/status.js";
 import { attempt } from "./commands/attempt.js";
 import { decide } from "./commands/decide.js";
 import { correct } from "./commands/correct.js";
+import { stale } from "./commands/stale.js";
 import { capture } from "./commands/capture.js";
 import { save } from "./commands/save.js";
 import { prime } from "./commands/prime.js";
@@ -107,6 +108,7 @@ program
   .description("log a key decision with its reasoning")
   .option("--because <reason>", "why this choice")
   .option("--alt <alternatives...>", "alternatives considered")
+  .option("--evidence <paths...>", "hash evidence files relative to the repository root")
   .option(
     "--key <key>",
     "fact key: a newer entry with the same key revokes the older one (kept for audit)",
@@ -116,6 +118,7 @@ program
       choice,
       because: opts.because,
       alternatives: opts.alt,
+      evidence: opts.evidence,
       key: opts.key,
     });
   });
@@ -125,6 +128,7 @@ program
   .description("log a time the agent got it wrong and what the user meant")
   .requiredOption("--user-said <text>", "verbatim user feedback")
   .option("--lesson <text>", "extracted rule for the future")
+  .option("--evidence <paths...>", "hash evidence files relative to the repository root")
   .option(
     "--key <key>",
     "fact key: a newer entry with the same key revokes the older one (kept for audit)",
@@ -134,8 +138,18 @@ program
       action,
       userSaid: opts.userSaid,
       lesson: opts.lesson,
+      evidence: opts.evidence,
       key: opts.key,
     });
+  });
+
+program
+  .command("stale")
+  .description("check evidence for active decisions and corrections")
+  .option("--check", "exit 1 if evidence changed or disappeared")
+  .option("--json", "emit evidence status as JSON")
+  .action(async (opts) => {
+    await stale({ check: opts.check, json: opts.json });
   });
 
 program

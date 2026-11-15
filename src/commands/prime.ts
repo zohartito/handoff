@@ -2,7 +2,8 @@ import { resolveHandoffPaths, type HandoffPaths } from "../format/paths.js";
 import { exists, readOrEmpty } from "../util/fs.js";
 import type { Meta } from "../format/types.js";
 import { loadMeta } from "../format/migrate.js";
-import { rankEntries, splitEntries, condenseEntry, type RankedEntries } from "./ranking.js";
+import { rankEntries, splitEntries, condenseEntry, entryId, type RankedEntries } from "./ranking.js";
+import { annotateEvidence, staleEntryIds, STALE_ANNOTATION } from "./evidence.js";
 import { retrieveFromRaw } from "./retrieval.js";
 import { computeHandoverRecord, renderLossLine } from "../format/handover.js";
 import {
@@ -229,7 +230,9 @@ export async function buildPrimer(
 
   for (const s of sections) {
     const raw = await readOrEmpty(s.path);
-    const body = cleanBody(raw);
+    const annotated = s.path === paths.decisions || s.path === paths.corrections
+      ? await annotateEvidence(paths.root, raw) : raw;
+    const body = cleanBody(annotated);
     if (!body) continue;
     parts.push({ title: s.label, body });
   }
@@ -410,7 +413,9 @@ export async function buildStandingRulesContext(
     readOrEmpty(paths.attempts),
   ]);
 
-  const rules = rankEntries(correctionsRaw, { recentN: 0, maxStanding: 3 }).standing;
+  const staleIds = await staleEntryIds(paths.root, correctionsRaw);
+  const ranked = rankEntries(correctionsRaw, { recentN: 0, maxStanding: 3, withIds: true });
+  const rules = ranked.standing;
   const failures = rankEntries(attemptsRaw, { recentN: 0, maxStanding: 2 }).standing;
   if (rules.length === 0 && failures.length === 0) return "";
 
@@ -419,7 +424,10 @@ export async function buildStandingRulesContext(
   ];
   if (rules.length > 0) {
     lines.push("", "Corrections the user has repeated:");
-    for (const r of rules) lines.push(`- ${r.line} (seen ${r.count}×)`);
+    for (const [i, r] of rules.entries()) {
+      const suffix = ranked.standingIds?.[i]?.some((id) => staleIds.has(id)) ? STALE_ANNOTATION : "";
+      lines.push(`- ${r.line} (seen ${r.count}×)${suffix}`);
+    }
   }
   if (failures.length > 0) {
     lines.push("", "Approaches that have repeatedly failed here:");
@@ -437,6 +445,7 @@ type RenderRankedOpts = {
   maxEntryChars: number;
   /** Current task text. When present, the tail is selected by relevance to it. */
   task?: string;
+  staleIds?: ReadonlySet<string | null>;
 };
 
 /**
@@ -449,6 +458,7 @@ function renderRanked(raw: string, opts: RenderRankedOpts): string[] {
   const ranked: RankedEntries = rankEntries(raw, {
     recentN: opts.recentN,
     maxStanding: opts.maxStanding,
+    withIds: true,
   });
   const out: string[] = [];
 
@@ -457,7 +467,10 @@ function renderRanked(raw: string, opts: RenderRankedOpts): string[] {
     // how many endorsed this exact wording. The line comes from one
     // representative entry and can carry a caveat the others don't.
     const lines = ranked.standing
-      .map((s) => `- ${s.line}  _(theme seen ${s.count}×)_`)
+      .map((s, i) => {
+        const suffix = ranked.standingIds?.[i]?.some((id) => opts.staleIds?.has(id)) ? STALE_ANNOTATION : "";
+        return `- ${s.line}  _(theme seen ${s.count}×)_${suffix}`;
+      })
       .join("\n");
     out.push(`## ${opts.standingTitle}\n\n${lines}`);
   }
@@ -500,7 +513,8 @@ function renderRanked(raw: string, opts: RenderRankedOpts): string[] {
       total > shown
         ? `\n\n_(${label} ${tail.length} of ${total}; see \`.handoff/${opts.file}\` for the rest)_`
         : "";
-    const entries = tail.map((e) => clampEntry(e, opts.maxEntryChars));
+    const entries = tail.map((e) => clampEntry(e, opts.maxEntryChars) +
+      (opts.staleIds?.has(entryId(e)) ? STALE_ANNOTATION : ""));
     out.push(`## ${opts.recentTitle}\n\n${entries.join("\n\n---\n\n")}${ptr}`);
   }
 
@@ -511,6 +525,15 @@ function renderRanked(raw: string, opts: RenderRankedOpts): string[] {
 function clampEntry(entry: string, max: number): string {
   if (entry.length <= max) return entry;
   return `${entry.slice(0, max - 1).trimEnd()}…\n\n_(entry truncated)_`;
+}
+
+function evidenceConstraintsBlock(raw: string, staleIds: ReadonlySet<string | null>): string {
+  const staleRules = new Set(splitEntries(raw)
+    .filter((e) => staleIds.has(entryId(e)))
+    .flatMap((e) => extractConstraints(e).map((c) => c.text)));
+  return renderConstraintsBlock(extractConstraints(raw).map((c) => ({
+    ...c, text: c.text + (staleRules.has(c.text) ? STALE_ANNOTATION : ""),
+  })));
 }
 
 /**
@@ -622,17 +645,19 @@ export async function buildCompactPrimer(
 
   // 3. Corrections — recurring themes promoted above the recent tail.
   const correctionsRaw = await readOrEmpty(paths.corrections);
+  const staleIds = await staleEntryIds(paths.root, correctionsRaw);
 
   // Constraint-preserving compaction: extract every user rule from
   // corrections.md and re-inject it verbatim as a block shedToBudget must not
   // drop. The ranked sections below still carry the latest corrections in full
   // (with their agent-did/lesson context); this guarantees the *rules* survive
   // even when older entries fall outside the recentN window or get shed.
-  const constraintsBlock = renderConstraintsBlock(extractConstraints(correctionsRaw));
+  const constraintsBlock = evidenceConstraintsBlock(correctionsRaw, staleIds);
   if (constraintsBlock) parts.push(constraintsBlock);
 
   parts.push(
     ...renderRanked(correctionsRaw, {
+      staleIds,
       standingTitle: "Standing rules (repeated corrections — treat as hard constraints)",
       recentTitle: "Latest corrections",
       file: "corrections.md",
@@ -742,14 +767,16 @@ export async function buildSubagentPrimer(
   // Corrections — highest-signal "don't repeat this" input. Tighter caps than
   // the compact primer: a subagent is focused on one subtask and has ~1.5k.
   const correctionsRaw = await readOrEmpty(paths.corrections);
+  const staleIds = await staleEntryIds(paths.root, correctionsRaw);
 
   // Constraint-preserving compaction (see buildCompactPrimer): the subagent's
   // recentN is even tighter (2), so more constraints would otherwise be lost.
-  const constraintsBlock = renderConstraintsBlock(extractConstraints(correctionsRaw));
+  const constraintsBlock = evidenceConstraintsBlock(correctionsRaw, staleIds);
   if (constraintsBlock) parts.push(constraintsBlock);
 
   parts.push(
     ...renderRanked(correctionsRaw, {
+      staleIds,
       standingTitle: "Standing rules (repeated corrections — hard constraints)",
       recentTitle: "Latest corrections",
       file: "corrections.md",

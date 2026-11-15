@@ -153,6 +153,8 @@ export function entryTextForRanking(entry: string): string {
     // token shared by every machine-captured entry — a fake theme — and shows
     // up as the entry's apparent text downstream.
     .filter((l) => !/^\*\*source:\*\*/i.test(l.trim()))
+    // Evidence paths and hashes are provenance, not recurring themes.
+    .filter((l) => !/^\*\*evidence:\*\*/i.test(l.trim()))
     .join("\n")
     .replace(/\*\*[a-z][a-z ]*:\*\*/gi, " ");
 }

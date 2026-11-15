@@ -3,6 +3,7 @@ import { appendLine, exists, readOrEmpty, writeFileSafe } from "../util/fs.js";
 import { withFileLock } from "../util/lock.js";
 import { hashEntry, registerSeenHash } from "../util/capture-state.js";
 import { normalizeKey, revokeActiveByKey } from "./revocation.js";
+import { captureEvidence } from "./evidence.js";
 
 type CorrectOpts = {
   action: string;
@@ -15,6 +16,7 @@ type CorrectOpts = {
   quiet?: boolean;
   /** Fact key: a newer entry under the same key revokes older active ones. */
   key?: string;
+  evidence?: string[];
 };
 
 export async function correct(opts: CorrectOpts): Promise<void> {
@@ -27,6 +29,7 @@ export async function correct(opts: CorrectOpts): Promise<void> {
     return;
   }
 
+  const evidence = await captureEvidence(paths.root, opts.evidence);
   const isAuto = opts.source === "auto";
   const key = opts.key?.trim() ? normalizeKey(opts.key) : undefined;
   const ts = new Date().toISOString();
@@ -38,6 +41,7 @@ export async function correct(opts: CorrectOpts): Promise<void> {
     `**agent did:** ${opts.action}`,
     `\n**user said:** ${opts.userSaid}`,
     opts.lesson ? `\n**lesson:** ${opts.lesson}` : null,
+    ...evidence,
     ``,
     `---`,
     ``,
