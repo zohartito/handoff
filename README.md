@@ -76,7 +76,7 @@ handoff attempt "run migration with --force" \
   --summary "bulk write hits pg pool limit"
 ```
 
-### `handoff decide <choice> [--because <reason>] [--alt <alternatives...>] [--key <key>]`
+### `handoff decide <choice> [--because <reason>] [--alt <alternatives...>] [--key <key>] [--evidence <paths...>]`
 
 Logs a design decision to `decisions.md`. Capture the decision, the reasoning, and the alternatives you rejected so the next session doesn't re-litigate it.
 
@@ -88,7 +88,7 @@ handoff decide "use zod for request validation" \
 
 `--key` names the fact the entry asserts (e.g. `--key deploy.target`). Logging a newer entry under the same key **revokes** the older one: it's marked `**superseded:** true` in place (with a `revoked-by` pointer), drops out of primers and retrieval, but keeps its full text in the file for audit. Re-asserting an old value later just makes it active again. This is the fix for stale facts polluting the primer — an append-only log measurably underperforms *no memory at all* once facts drift ([TEPA, arXiv:2608.07429](https://arxiv.org/abs/2608.07429)).
 
-### `handoff correct <action> --user-said <text> [--lesson <text>] [--key <key>]`
+### `handoff correct <action> --user-said <text> [--lesson <text>] [--key <key>] [--evidence <paths...>]`
 
 Logs a user correction to `corrections.md`. When the user pushes back on an approach, log it verbatim — the lesson travels with the project. `--key` works as in `handoff decide`: when a correction updates a fact logged before, the stale entry is revoked instead of competing with the new one.
 
@@ -97,6 +97,8 @@ handoff correct "was about to add a new ORM layer" \
   --user-said "no new deps, use the raw pg client that's already wired up" \
   --lesson "this project values minimal deps over abstraction"
 ```
+
+Both commands accept `--evidence <paths...>` (also `evidence: string[]` on their MCP tools) to record each file's repo-relative path and the first 16 hex characters of its SHA-256. Paths resolve from the directory containing `.handoff/`; files must exist and remain inside that directory, including symlink targets. `handoff stale` reports OK, CHANGED, MISSING, or UNREADABLE (the file exists but cannot be read, for example after a permissions change) for each active entry's evidence; add `--json` for structured output or `--check` to exit 1 on anything but OK. Primers mark affected entries `(evidence changed: re-check before trusting)`. After reviewing the evidence, re-log with the same `--key` to supersede the old entry and capture fresh hashes.
 
 ### `handoff prime [--tool <tool>] [--max-chars <n>]`
 

@@ -140,6 +140,11 @@ export const TOOLS: ToolDef[] = [
           type: "string",
           description: "Optional: the extracted rule to follow next time.",
         },
+        evidence: {
+          type: "array",
+          items: { type: "string" },
+          description: "Optional: evidence files relative to the repository root, hashed when logged. Must exist and stay inside the repository.",
+        },
         key: {
           type: "string",
           description:
@@ -158,6 +163,7 @@ export const TOOLS: ToolDef[] = [
         action: String(args.action),
         userSaid: String(args.userSaid),
         lesson: args.lesson === undefined ? undefined : String(args.lesson),
+        evidence: evidencePaths(args.evidence),
         key: args.key === undefined ? undefined : String(args.key),
         cwd: ctx.projectRoot,
         quiet: true,
@@ -223,6 +229,11 @@ export const TOOLS: ToolDef[] = [
           items: { type: "string" },
           description: "Optional: the alternatives that were considered and rejected.",
         },
+        evidence: {
+          type: "array",
+          items: { type: "string" },
+          description: "Optional: evidence files relative to the repository root, hashed when logged. Must exist and stay inside the repository.",
+        },
         key: {
           type: "string",
           description:
@@ -241,6 +252,7 @@ export const TOOLS: ToolDef[] = [
         choice: String(args.choice),
         because: args.because === undefined ? undefined : String(args.because),
         alternatives: normalizeStringArray(args.alternatives),
+        evidence: evidencePaths(args.evidence),
         key: args.key === undefined ? undefined : String(args.key),
         cwd: ctx.projectRoot,
       });
@@ -498,6 +510,14 @@ function normalizeStringArray(value: unknown): string[] | undefined {
   if (!Array.isArray(value)) return undefined;
   const out = value.map((v) => String(v)).filter((s) => s.length > 0);
   return out.length > 0 ? out : undefined;
+}
+
+function evidencePaths(value: unknown): string[] | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value) || value.some((path) => typeof path !== "string")) {
+    throw new Error("evidence must be an array of file paths.");
+  }
+  return value;
 }
 
 /**

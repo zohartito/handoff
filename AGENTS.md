@@ -43,6 +43,14 @@ boundary: no lossy summarization of load-bearing traces). Idempotent.
 - Follow CONVENTIONS.md (if present) and the global ~/.claude/CLAUDE.md.
 - Make surgical, single-purpose changes; match existing style.
 
+## Evidence freshness
+`decide` and `correct` accept `--evidence <paths...>` (MCP: `evidence: string[]`).
+`src/commands/evidence.ts` hashes repo-contained files and checks recorded hashes;
+`handoff stale --check` exits 1 for changed, missing or unreadable evidence on active entries;
+an unreadable file flags its entry and never aborts a primer.
+Primers annotate stale evidence at render time without changing stored entries.
+Regression coverage lives in `tests/evidence.test.ts`.
+
 ## Lessons
 Corrections, gotchas, and "don't do X again" notes accumulate in `.claude/lessons.md`
 and are consolidated by the `dream` skill. Read them before non-trivial work.
