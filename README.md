@@ -202,15 +202,15 @@ Runs an MCP (Model Context Protocol) server over stdio so any MCP-speaking agent
 Developer tool that makes the relevance-ranking thresholds decidable by measurement instead of reasoning. It is a **deterministic retrieval eval**: over a set of labelled fixture scenarios (`tests/fixtures/eval/`), it asks whether the ranker surfaces the corrections/attempts a human marked relevant to each task, and reports precision, recall, F1, and MRR — no LLM, no API key, offline and reproducible.
 
 ```bash
-handoff evaluate                 # score the shipping "recurrence" ranking, per scenario
-handoff evaluate --compare       # recurrence vs a plain recency control, side by side
+handoff evaluate                 # score the shipped selection strategy, per scenario
+handoff evaluate --compare       # shipped, recurrence, relevance and recency, side by side
 handoff evaluate --sweep         # sweep PROMOTION_THRESHOLD 2..6 and report F1 for each
 handoff evaluate --json          # machine-readable output
 ```
 
-The `recurrence` strategy calls the real `rankEntries` (the shipping code is the baseline, not a copy); `recency` is a last-N control. On the current corpus recurrence beats recency on every metric, and the sweep puts the shipped `PROMOTION_THRESHOLD = 3` on the optimal F1 plateau (raising it to 4+ discards genuine three-time themes).
+The default `shipped` strategy combines task relevance with recency backfill. `recurrence` calls `rankEntries`; `recency` is a last-N control. On the current corpus recurrence beats recency on every metric, and the sweep puts the shipped `PROMOTION_THRESHOLD = 3` on the optimal F1 plateau (raising it to 4+ discards genuine three-time themes).
 
-**What it measures — and does not.** This is retrieval quality: did the right entries reach the top of the list. It does **not** measure agent behaviour, comprehension, or outcomes, and the shipping ranker is task-blind (it orders by recurrence and recency, never reading the task text). The output states this on every run. See `tests/fixtures/eval/README.md` for the label format.
+**What it measures — and does not.** This is retrieval quality: did the right entries reach the top of the list. It does **not** measure agent behaviour, comprehension, or outcomes, and it scores strategy-selected entry IDs rather than executing the final budgeted primer. Character-budget shedding and constraint reinjection can change delivered context. The output states this on every run. See `tests/fixtures/eval/README.md` for the label format.
 
 ### `handoff compact [attempts|corrections|decisions|all] [--keep <n>] [--dry-run]`
 

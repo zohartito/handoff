@@ -176,3 +176,13 @@ test("recency ignores the task text (control is genuinely task-blind)", async ()
   const withoutTask = recency(s.corpus, "totally different task text", s.k);
   assert.deepEqual(withTask, withoutTask);
 });
+
+test("HOF-14: default evaluation names shipped selection and its delivery limits", async () => {
+  const { execFileSync } = await import("node:child_process");
+  const cli = new URL("../src/cli.js", import.meta.url).pathname;
+  const result = JSON.parse(execFileSync(process.execPath, [cli, "evaluate", "--dir", EVAL_DIR, "--json"], { encoding: "utf8" }));
+  assert.equal(result.report.strategy, "shipped");
+  assert.match(result.caveat, /task relevance/);
+  assert.match(result.caveat, /budgeted primer/);
+  assert.doesNotMatch(result.caveat, /shipping ranker is task-blind/);
+});
