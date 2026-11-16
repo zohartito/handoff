@@ -175,11 +175,11 @@ Vault resolution: `--vault` wins over `HANDOFF_OBSIDIAN_VAULT`. No vault configu
 
 ### `handoff search <query> [--limit <n>] [--root <path>...] [--case-sensitive]`
 
-Greps every `.handoff/` folder on the machine for `<query>` and returns ranked results grouped by project. Default roots: `$HOME` plus common code dirs (`~/code`, `~/repos`, `~/dev`, `~/projects`, `~/src`, `~/work`, `~/Documents/GitHub`). Override with `--root` (repeatable) or `HANDOFF_SEARCH_ROOTS` (colon/semicolon separated). Ranking: exact-word > project recency > file order.
+Searches six files in discovered `.handoff/` projects: `task.md`, `progress.md`, `decisions.md`, `corrections.md`, `attempts.md`, and `HANDOFF.md`. Other files (including open loops, identity and transcripts) are not searched. Results are ranked and grouped by project. Default roots: `$HOME` plus common code dirs (`~/code`, `~/repos`, `~/dev`, `~/projects`, `~/src`, `~/work`, `~/Documents/GitHub`, `~/SynologyDrive`). Override with `--root` (repeatable) or `HANDOFF_SEARCH_ROOTS` (colon/semicolon separated). Ranking: exact-word > project recency > file order.
 
 ### `handoff patterns [--top <n>] [--root <path>...]`
 
-Aggregates correction themes, failure modes, and tool usage across every `.handoff/` on the machine. Uses the same discovery roots as `search`. Tokenizes corrections/attempts (unigrams + bigrams, stopwords filtered), tags each theme with the project languages it appeared in, and reports tool-usage counts. Useful for spotting recurring mistakes you keep correcting LLMs about.
+Aggregates correction themes, failure modes, and initial source-tool attribution across discovered `.handoff/` projects. Its separate walker defaults to `$HOME`, `~/Documents`, `~/code`, `~/Projects`, `~/src`, `~/repos`, `~/dev`, and `~/workspace`; use `--root` or `HANDOFF_SEARCH_ROOTS` to choose explicit roots for either command. Tokenizes corrections/attempts (unigrams + bigrams, stopwords filtered), tags each theme with the project languages it appeared in, and reports tool-usage counts. Useful for spotting recurring mistakes you keep correcting LLMs about.
 
 ### `handoff verify [--check] [--file <path>] [--stdin]`
 
