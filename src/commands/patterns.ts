@@ -295,7 +295,7 @@ function printReport(r: PatternsResult): void {
   }
   console.log();
 
-  console.log("## Tool usage");
+  console.log("## Initial source tool (projects, not usage events)");
   const toolEntries = Object.entries(r.toolUsage).sort((a, b) => b[1] - a[1]);
   if (toolEntries.length === 0) {
     console.log("  (no tool data)");

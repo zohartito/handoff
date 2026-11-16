@@ -179,7 +179,7 @@ Searches six files in discovered `.handoff/` projects: `task.md`, `progress.md`,
 
 ### `handoff patterns [--top <n>] [--root <path>...]`
 
-Aggregates correction themes, failure modes, and initial source-tool attribution across discovered `.handoff/` projects. Its separate walker defaults to `$HOME`, `~/Documents`, `~/code`, `~/Projects`, `~/src`, `~/repos`, `~/dev`, and `~/workspace`; use `--root` or `HANDOFF_SEARCH_ROOTS` to choose explicit roots for either command. Tokenizes corrections/attempts (unigrams + bigrams, stopwords filtered), tags each theme with the project languages it appeared in, and reports tool-usage counts. Useful for spotting recurring mistakes you keep correcting LLMs about.
+Aggregates correction themes, failure modes, and initial source-tool attribution across discovered `.handoff/` projects. Its separate walker defaults to `$HOME`, `~/Documents`, `~/code`, `~/Projects`, `~/src`, `~/repos`, `~/dev`, and `~/workspace`; use `--root` or `HANDOFF_SEARCH_ROOTS` to choose explicit roots for either command. Tokenizes corrections/attempts (unigrams + bigrams, stopwords filtered), tags each theme with the project languages it appeared in, and counts each project once under its initial `meta.sourceTool`. These are source attribution counts; switches and tool-use events are not counted. Useful for spotting recurring mistakes you keep correcting LLMs about.
 
 ### `handoff verify [--check] [--file <path>] [--stdin]`
 
