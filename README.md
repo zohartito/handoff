@@ -58,7 +58,7 @@ Run `handoff <command> --help` for full options on any command.
 
 ### `handoff init [--from <tool>] [--force]`
 
-Scaffolds `.handoff/` in the current directory. `--from <tool>` seeds identity/environment from a known tool context. `--force` overwrites an existing folder.
+Scaffolds `.handoff/` in the current directory. `--from <tool>` records the initial source tool in `meta.json`; identity and environment start as templates. Fill in identity manually and run `handoff save` to capture the environment. `--force` overwrites an existing folder.
 
 ### `handoff status`
 
