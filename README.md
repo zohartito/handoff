@@ -163,8 +163,10 @@ Supported targets: `claude-code`, `claude-desktop`, `cursor`, `codex`, `gemini`,
 Writes the current project's `.handoff/` content into an Obsidian vault so your session state survives as permanent cross-project memory. Produces:
 
 - `Daily/YYYY-MM-DD.md` — appends one `## handoff: <project> — HH:MM` block per run (idempotent within the same minute).
-- `Decisions/YYYY-MM-DD_<project>_<slug>.md` — one note per decision entry; updates in place if the entry body changes.
-- `Rules/<project>__<slug>.md` — one note per correction (append-only rulebook).
+- `Decisions/YYYY-MM-DD_<project>_<project-id>_<entry-id>.md` — one note per decision entry; updates in place if the entry body changes.
+- `Rules/<project>__<project-id>_<entry-id>.md` — one note per correction (append-only rulebook).
+
+Project and entry identities are persisted in `.handoff/obsidian-ids.json`; keep it with the logs. Decision dates come from entry timestamps, not the sync date. Legacy slug-named exports are left untouched.
 
 Vault resolution: `--vault` wins over `HANDOFF_OBSIDIAN_VAULT`. No vault configured → error.
 

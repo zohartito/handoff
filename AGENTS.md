@@ -44,6 +44,10 @@ boundary: no lossy summarization of load-bearing traces). Idempotent.
 - Follow CONVENTIONS.md (if present) and the global ~/.claude/CLAUDE.md.
 - Make surgical, single-purpose changes; match existing style.
 
+## Obsidian sync identities
+`obsidian sync` maintains `.handoff/obsidian-ids.json` for independent note identities.
+Keep it with the logs; content edits and later sync dates retain the same note.
+
 ## Evidence freshness
 `decide` and `correct` accept `--evidence <paths...>` (MCP: `evidence: string[]`).
 `src/commands/evidence.ts` hashes repo-contained files and checks recorded hashes;
