@@ -138,3 +138,28 @@ test("correct --key end to end: revoke-then-append under one lock", async () => 
     await fs.rm(dir, { recursive: true, force: true });
   }
 });
+
+test("HOF-06: CLI hook and switch full primers omit revoked facts", async () => {
+  const { spawnSync } = await import("node:child_process");
+  const { decide } = await import("../src/commands/decide.js");
+  const { selectPrimer } = await import("../src/commands/switch.js");
+  const { resolveHandoffPaths } = await import("../src/format/paths.js");
+  const root = await fs.mkdtemp(join(tmpdir(), "handoff-prime-revoked-"));
+  await fs.mkdir(join(root, ".handoff"));
+  await decide({ cwd: root, choice: "OLD_DEPLOY_VALUE", key: "deploy.target" });
+  await correct({ cwd: root, action: "indent", userSaid: "OLD_INDENT_VALUE", key: "style.indent", quiet: true });
+  await new Promise((r) => setTimeout(r, 5));
+  await decide({ cwd: root, choice: "NEW_DEPLOY_VALUE", key: "deploy.target" });
+  await correct({ cwd: root, action: "indent", userSaid: "NEW_INDENT_VALUE", key: "style.indent", quiet: true });
+  const cli = new URL("../src/cli.js", import.meta.url);
+  for (const args of [["prime"], ["prime", "--tool", "cursor"], ["hook", "session-start"]]) {
+    const result = spawnSync(process.execPath, [cli.pathname, ...args], { cwd: root, encoding: "utf8", input: "{}" });
+    assert.equal(result.status, 0);
+    assert.doesNotMatch(result.stdout, /OLD_DEPLOY_VALUE|OLD_INDENT_VALUE/);
+    assert.match(result.stdout, /NEW_DEPLOY_VALUE/);
+    assert.match(result.stdout, /NEW_INDENT_VALUE/);
+  }
+  const selected = await selectPrimer(resolveHandoffPaths(root), "cursor", false);
+  assert.doesNotMatch(selected.primer, /OLD_DEPLOY_VALUE|OLD_INDENT_VALUE/);
+  assert.match(await fs.readFile(join(root, ".handoff/decisions.md"), "utf8"), /OLD_DEPLOY_VALUE/);
+});
