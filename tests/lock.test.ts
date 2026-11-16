@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -227,7 +228,7 @@ test("HOF-16: a fresh CLI process recovers an old abandoned lock", async () => {
   writeFileSync(lock, JSON.stringify({ pid: 2147483647, ts: 0 }));
   const old = new Date(Date.now() - 60_000);
   utimesSync(lock, old, old);
-  const cli = new URL("../src/cli.js", import.meta.url).pathname;
+  const cli = fileURLToPath(new URL("../src/cli.js", import.meta.url));
   const result = spawnSync(process.execPath, [cli, "attempt", "recovered after crash"], { cwd: root, encoding: "utf8" });
   assert.equal(result.status, 0, result.stderr);
   assert.match(readFileSync(join(root, ".handoff/attempts.md"), "utf8"), /recovered after crash/);
@@ -253,7 +254,7 @@ test("HOF-N4: CLI lock timeout is concise and makes no reclamation promise", asy
   const { spawnSync } = await import("node:child_process");
   const root = scaffoldHandoffDir();
   writeFileSync(join(root, ".handoff/attempts.md.lock"), JSON.stringify({ pid: process.pid, ts: Date.now() }));
-  const cli = new URL("../src/cli.js", import.meta.url).pathname;
+  const cli = fileURLToPath(new URL("../src/cli.js", import.meta.url));
   const result = spawnSync(process.execPath, [cli, "attempt", "blocked by live writer"], { cwd: root, encoding: "utf8" });
   assert.equal(result.status, 1);
   assert.match(result.stderr, /could not acquire lock/);

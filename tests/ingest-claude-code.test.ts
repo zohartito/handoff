@@ -240,7 +240,7 @@ test("HOF-21: latest ingest refuses sibling sessions unless explicitly selected"
     type: "user", cwd: join(root, "sibling"), timestamp: "2026-11-15T00:00:00Z",
     sessionId: "sibling-session", message: { role: "user", content: "SIBLING_ONLY_MARKER" },
   }) + "\n");
-  const cli = new URL("../src/cli.js", import.meta.url).pathname;
+  const cli = fileURLToPath(new URL("../src/cli.js", import.meta.url));
   const run = (...args: string[]) => spawnSync(process.execPath, [cli, "ingest", "--from", "claude-code", ...args], {
     cwd: project, encoding: "utf8", env: { ...process.env, HOME: home, USERPROFILE: home },
   });

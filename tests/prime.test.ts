@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
@@ -614,6 +615,6 @@ test("HOF-30: the compact rate-limit correction command executes", async () => {
   const command = primer.match(/`(handoff correct [^`]+)`/)?.[1];
   assert.ok(command);
   const args = (command.match(/"[^"]*"|\S+/g) ?? []).slice(1).map((s) => s.replace(/^"|"$/g, ""));
-  const result = spawnSync(process.execPath, [new URL("../src/cli.js", import.meta.url).pathname, ...args], { cwd: paths.root, encoding: "utf8" });
+  const result = spawnSync(process.execPath, [fileURLToPath(new URL("../src/cli.js", import.meta.url)), ...args], { cwd: paths.root, encoding: "utf8" });
   assert.equal(result.status, 0, result.stderr);
 });

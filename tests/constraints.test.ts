@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
@@ -155,7 +156,7 @@ test("HOF-09 HOF-N2: compact CLI rejects loss and a larger budget carries all ru
   const rules = Array.from({ length: 25 }, (_, i) => `constraint ${i + 1}: ${"distinct guardrail ".repeat(10)}end`);
   writeFileSync(paths.corrections, "# Corrections\n" + rules.map((rule, i) =>
     mkCorrection(`2026-01-${String(i + 1).padStart(2, "0")}T00:00:00Z`, "action", rule)).join(""));
-  const cli = new URL("../src/cli.js", import.meta.url).pathname;
+  const cli = fileURLToPath(new URL("../src/cli.js", import.meta.url));
   const small = spawnSync(process.execPath, [cli, "prime", "--compact"], { cwd: paths.root, encoding: "utf8" });
   assert.equal(small.status, 1);
   assert.equal(small.stdout, "", "a rejected primer must not leak into a pipe");
@@ -168,7 +169,7 @@ test("HOF-09 HOF-N2: compact CLI rejects loss and a larger budget carries all ru
 test("HOF-11: CLI budgets bound every renderer or reject mandatory content", async () => {
   const { spawnSync } = await import("node:child_process");
   const paths = scaffold();
-  const cli = new URL("../src/cli.js", import.meta.url).pathname;
+  const cli = fileURLToPath(new URL("../src/cli.js", import.meta.url));
   for (const flags of [[], ["--compact"], ["--subagent"]]) {
     for (const budget of [100, 500, 1000, 1999, 4000]) {
       const result = spawnSync(process.execPath, [cli, "prime", ...flags, "--max-chars", String(budget)], { cwd: paths.root, encoding: "utf8" });

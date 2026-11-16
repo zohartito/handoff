@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { switchTool, spawnDetached } from "../src/commands/switch.js";
@@ -212,7 +213,7 @@ test("HOF-12 HOF-N3: failed copy and launch never claim success", async () => {
   const root = scaffold("codex").root;
   const bin = join(root, "empty-path");
   mkdirSync(bin);
-  const cli = new URL("../src/cli.js", import.meta.url).pathname;
+  const cli = fileURLToPath(new URL("../src/cli.js", import.meta.url));
   const result = spawnSync(process.execPath, [cli, "switch", "cursor", "--no-save"], {
     cwd: root, encoding: "utf8", env: { ...process.env, PATH: bin, HOME: root },
   });

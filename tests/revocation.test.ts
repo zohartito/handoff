@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { promises as fs } from "node:fs";
@@ -153,7 +154,7 @@ test("HOF-06: CLI hook and switch full primers omit revoked facts", async () => 
   await correct({ cwd: root, action: "indent", userSaid: "NEW_INDENT_VALUE", key: "style.indent", quiet: true });
   const cli = new URL("../src/cli.js", import.meta.url);
   for (const args of [["prime"], ["prime", "--tool", "cursor"], ["hook", "session-start"]]) {
-    const result = spawnSync(process.execPath, [cli.pathname, ...args], { cwd: root, encoding: "utf8", input: "{}" });
+    const result = spawnSync(process.execPath, [fileURLToPath(cli), ...args], { cwd: root, encoding: "utf8", input: "{}" });
     assert.equal(result.status, 0);
     assert.doesNotMatch(result.stdout, /OLD_DEPLOY_VALUE|OLD_INDENT_VALUE/);
     assert.match(result.stdout, /NEW_DEPLOY_VALUE/);

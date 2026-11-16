@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { install } from "../src/commands/install.js";
@@ -82,7 +83,7 @@ test("HOF-27: removal and doctor recognize optional handoff hooks", async () => 
   await writeFile(join(root, ".claude/settings.json"), JSON.stringify({
     hooks: { PreCompact: [{ hooks: [{ type: "command", command: "handoff hook pre-compact" }] }] },
   }));
-  const cli = new URL("../src/cli.js", import.meta.url).pathname;
+  const cli = fileURLToPath(new URL("../src/cli.js", import.meta.url));
   const result = spawnSync(process.execPath, [cli, "doctor"], { cwd: root, encoding: "utf8", env: { ...process.env, HOME: root, USERPROFILE: root } });
   assert.match(result.stdout, /PreCompact/);
   assert.doesNotMatch(result.stdout, /project \(\.claude\/settings.json\): no handoff hooks/);
