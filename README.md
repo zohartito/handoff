@@ -19,9 +19,12 @@ For Claude Code this is zero-friction (hooks auto-inject on session start, auto-
 ```bash
 cd my-project
 handoff init
+handoff install --tool claude-code
 ```
 
-Work normally in Claude Code — it hydrates from `.handoff/` on session start and logs as it goes.
+`init` creates state files only. Copy the hook settings printed by `install` into the project's `.claude/settings.json`, and add the [logging instructions](#integration-recipe-claude-code) to `CLAUDE.md`. Both steps are manual; `install` prints instructions without changing configuration.
+
+Run `handoff doctor` to check the hook wiring, then start a new Claude Code session. SessionStart hydrates context and Stop captures selected events; the logging instructions ask the agent to record decisions and corrections as it works.
 
 Hit a rate limit? Switch tools:
 
