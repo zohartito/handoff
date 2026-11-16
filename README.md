@@ -338,7 +338,7 @@ These keep the `.handoff/` folder current so the next tool has full context.
 
 ## Integration recipe: Cursor
 
-Cursor does not yet have a stable hook or MCP surface for this. Until it does:
+Cursor can use the [MCP server configuration below](#integration-recipe-mcp-server) for native state tools. For a clipboard-based session handoff, run:
 
 ```bash
 handoff switch cursor
@@ -360,7 +360,7 @@ Log significant events with `handoff attempt`, `handoff decide`, and
 `handoff correct` as you work.
 ```
 
-Codex and Gemini follow the same pattern: `handoff switch codex`, `handoff switch gemini`. Native integrations will land as those tools expose suitable extension points.
+Codex and Gemini also support the switch workflow: `handoff switch codex`, `handoff switch gemini`. A Codex MCP configuration is included below.
 
 ## Integration recipe: MCP server
 
@@ -425,7 +425,7 @@ Optional launchers live in `scripts/` (AutoHotkey v2 for Windows, AppleScript fo
 
 - **Local-first, file-based.** No cloud, no DB, no servers. The source of truth is `.handoff/` in your project root.
 - **Per-project.** Each repo has its own `.handoff/`. Context does not leak across projects.
-- **Integration layers per tool.** Claude Code uses hooks for zero-friction auto-inject. Cursor, Codex, and Gemini use `handoff switch` (clipboard plus launcher) until their extension stories mature.
+- **Integration layers per tool.** Claude Code uses hooks for zero-friction auto-inject. Cursor, Codex, and Gemini can use `handoff switch` (clipboard plus launcher); MCP clients can also use the native state tools.
 - **Ingest parsers.** Claude Code transcripts are read directly from JSONL. Cursor state is read from `state.vscdb` via the built-in `node:sqlite` module — no native bindings, no extra dependencies.
 
 ## Roadmap
