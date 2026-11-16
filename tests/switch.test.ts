@@ -206,3 +206,18 @@ test("switch --compact to claude-code is a surfaced no-op (hook injects full)", 
     assert.match(out, /--compact does not apply to Claude Code/);
   }
 });
+
+test("HOF-12 HOF-N3: failed copy and launch never claim success", async () => {
+  const { spawnSync } = await import("node:child_process");
+  const root = scaffold("codex").root;
+  const bin = join(root, "empty-path");
+  mkdirSync(bin);
+  const cli = new URL("../src/cli.js", import.meta.url).pathname;
+  const result = spawnSync(process.execPath, [cli, "switch", "cursor", "--no-save"], {
+    cwd: root, encoding: "utf8", env: { ...process.env, PATH: bin, HOME: root },
+  });
+  assert.match(result.stderr, /couldn't copy/);
+  assert.match(result.stderr, /couldn't launch/);
+  assert.doesNotMatch(result.stderr, /✓.*copied|✓.*launching|already on your clipboard/);
+  assert.equal(result.status, 1, "requested operations failed");
+});
