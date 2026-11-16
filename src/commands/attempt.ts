@@ -1,3 +1,4 @@
+import { redactSecrets } from "../util/redact.js";
 import { resolveHandoffPaths } from "../format/paths.js";
 import { appendLine, exists } from "../util/fs.js";
 import { withFileLock } from "../util/lock.js";
@@ -26,6 +27,14 @@ export async function attempt(opts: AttemptOpts): Promise<void> {
   }
 
   const isAuto = opts.source === "auto";
+  if (isAuto) {
+    opts = { ...opts,
+      what: redactSecrets(opts.what),
+      error: opts.error ? redactSecrets(opts.error) : undefined,
+      fix: opts.fix ? redactSecrets(opts.fix) : undefined,
+      summary: opts.summary ? redactSecrets(opts.summary) : undefined,
+    };
+  }
   const ts = new Date().toISOString();
   const entry = [
     `## ${ts}`,

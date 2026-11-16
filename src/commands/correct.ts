@@ -1,3 +1,4 @@
+import { redactSecrets } from "../util/redact.js";
 import { resolveHandoffPaths } from "../format/paths.js";
 import { appendLine, exists, readOrEmpty, writeFileSafe } from "../util/fs.js";
 import { withFileLock } from "../util/lock.js";
@@ -31,6 +32,13 @@ export async function correct(opts: CorrectOpts): Promise<void> {
 
   const evidence = await captureEvidence(paths.root, opts.evidence);
   const isAuto = opts.source === "auto";
+  if (isAuto) {
+    opts = { ...opts,
+      action: redactSecrets(opts.action),
+      userSaid: redactSecrets(opts.userSaid),
+      lesson: opts.lesson ? redactSecrets(opts.lesson) : undefined,
+    };
+  }
   const key = opts.key?.trim() ? normalizeKey(opts.key) : undefined;
   const ts = new Date().toISOString();
   const entry = [
