@@ -379,14 +379,16 @@ It exposes six tools:
 
 The server operates on one project root, taken from `--cwd`, else `HANDOFF_PROJECT_ROOT`, else the process working directory. Point it at the project you're handing off.
 
+Use a reviewed local checkout for MCP. Run `npm ci`, `npm run build`, and `npm run release:check` in that checkout first. Configure an absolute Node executable and the built checkout's launcher below; MCP startup then executes that local copy without resolving a package from npm. Upgrade the checkout and its lockfile deliberately, rebuild, and rerun the release check.
+
 **Claude Desktop** — add to `claude_desktop_config.json` (macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`; Windows: `%APPDATA%\Claude\claude_desktop_config.json`):
 
 ```json
 {
   "mcpServers": {
     "handoff": {
-      "command": "npx",
-      "args": ["-y", "@zohartito/handoff", "mcp"],
+      "command": "/absolute/path/to/node",
+      "args": ["/absolute/path/to/handoff/bin/handoff.mjs", "mcp"],
       "env": { "HANDOFF_PROJECT_ROOT": "/absolute/path/to/your/project" }
     }
   }
@@ -397,8 +399,8 @@ The server operates on one project root, taken from `--cwd`, else `HANDOFF_PROJE
 
 ```toml
 [mcp_servers.handoff]
-command = "npx"
-args = ["-y", "@zohartito/handoff", "mcp"]
+command = "/absolute/path/to/node"
+args = ["/absolute/path/to/handoff/bin/handoff.mjs", "mcp"]
 env = { HANDOFF_PROJECT_ROOT = "/absolute/path/to/your/project" }
 ```
 
@@ -408,14 +410,14 @@ env = { HANDOFF_PROJECT_ROOT = "/absolute/path/to/your/project" }
 {
   "mcpServers": {
     "handoff": {
-      "command": "npx",
-      "args": ["-y", "@zohartito/handoff", "mcp", "--cwd", "/absolute/path/to/your/project"]
+      "command": "/absolute/path/to/node",
+      "args": ["/absolute/path/to/handoff/bin/handoff.mjs", "mcp", "--cwd", "/absolute/path/to/your/project"]
     }
   }
 }
 ```
 
-If `handoff` is installed globally (`npm i -g @zohartito/handoff`), replace `"command": "npx"` / `"args": ["-y", "@zohartito/handoff", "mcp", ...]` with `"command": "handoff"` / `"args": ["mcp", ...]`.
+Keep these paths pointed at the reviewed checkout and a supported Node installation. Restart the MCP client after a deliberate upgrade.
 
 ## Keyboard shortcuts and tray integration
 
