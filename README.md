@@ -62,7 +62,7 @@ Scaffolds `.handoff/` in the current directory. `--from <tool>` seeds identity/e
 
 ### `handoff status`
 
-Shows which files in `.handoff/` are filled vs still template. Filled files show `●`, template files show `○`. Quick signal for whether the current session has captured anything meaningful yet.
+Shows which files in `.handoff/` are filled vs still template. Filled files show `●`, untouched templates show `○`, and the initial correction rule is labelled `seeded` with `◐`. Quick signal for whether the current session has captured anything meaningful yet.
 
 ### `handoff save`
 

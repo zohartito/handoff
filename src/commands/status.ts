@@ -1,3 +1,4 @@
+import { templates } from "../format/templates.js";
 import { resolveHandoffPaths } from "../format/paths.js";
 import { exists, readOrEmpty } from "../util/fs.js";
 import { loadMeta } from "../format/migrate.js";
@@ -42,9 +43,10 @@ export async function status(opts: { cwd?: string } = {}): Promise<void> {
   for (const c of checks) {
     const content = await readOrEmpty(c.path);
     const substantive = stripTemplate(content).trim().length;
+    const untouched = content.trim() === templates[c.label]?.trim();
     rows.push({
       file: c.label,
-      status: substantive > 0 ? "filled" : "template",
+      status: untouched ? (c.label === "corrections.md" ? "seeded" : "template") : substantive > 0 ? "filled" : "template",
       size: content.length,
     });
   }
@@ -52,7 +54,7 @@ export async function status(opts: { cwd?: string } = {}): Promise<void> {
   const width = Math.max(...rows.map((r) => r.file.length));
   console.log("contents:");
   for (const r of rows) {
-    const mark = r.status === "filled" ? "●" : "○";
+    const mark = r.status === "filled" ? "●" : r.status === "seeded" ? "◐" : "○";
     console.log(`  ${mark} ${r.file.padEnd(width)}  ${r.status.padEnd(8)}  ${r.size}b`)
   }
 }

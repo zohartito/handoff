@@ -716,7 +716,7 @@ export async function buildCompactPrimer(
 
 /**
  * Extract os / node / git-branch from environment.md into a single line.
- * The auto-generated section uses `- **key:** value` bullets; we pick a
+ * The saved section uses `- key: value`; also accept legacy bold labels. Pick a
  * few high-signal keys and format as `os: linux | node: 22.11.0 | branch: main`.
  * Falls back to "" if nothing recognizable is found.
  */
@@ -725,8 +725,8 @@ function extractEnvOneLine(raw: string): string {
   const lines = raw.split("\n");
   const pick = (label: RegExp): string | null => {
     for (const line of lines) {
-      const m = line.match(/^\s*[-*]\s*\*\*([^*]+)\*\*:?\s*(.+?)\s*$/);
-      if (m && label.test(m[1])) return m[2];
+      const m = line.match(/^\s*[-*]\s*(?:\*\*([^*]+)\*\*:?\s*|([^:]+):\s*)(.+?)\s*$/);
+      if (m && label.test(m[1] ?? m[2])) return m[3];
     }
     return null;
   };

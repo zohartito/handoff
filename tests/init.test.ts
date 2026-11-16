@@ -91,3 +91,30 @@ test("init: creates the expected non-empty template / meta files", async () => {
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("HOF-17: real save output appears in the compact environment summary", async () => {
+  const { save } = await import("../src/commands/save.js");
+  const { buildCompactPrimer } = await import("../src/commands/prime.js");
+  const root = makeTmpDir();
+  await quiet(() => init({ cwd: root }));
+  await quiet(() => save({ cwd: root }));
+  const output = await buildCompactPrimer(resolveHandoffPaths(root), "generic");
+  assert.match(output, /## Environment/);
+  assert.ok(output.includes(`node: ${process.version}`));
+  assert.match(output, /os: /);
+});
+
+test("HOF-18: status distinguishes templates seeds and saved environment", async () => {
+  const { save } = await import("../src/commands/save.js");
+  const { status } = await import("../src/commands/status.js");
+  const root = makeTmpDir();
+  await quiet(() => init({ cwd: root }));
+  const before: string[] = [];
+  await quiet(() => status({ cwd: root }), before);
+  assert.match(before.join("\n"), /environment\.md\s+template/);
+  assert.match(before.join("\n"), /corrections\.md\s+seeded/);
+  await quiet(() => save({ cwd: root }));
+  const after: string[] = [];
+  await quiet(() => status({ cwd: root }), after);
+  assert.match(after.join("\n"), /environment\.md\s+filled/);
+});
