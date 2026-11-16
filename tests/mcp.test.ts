@@ -328,7 +328,7 @@ test("stdout carries ONLY valid JSON-RPC — no stray log output leaks in", asyn
   }
 });
 
-test("HOF-08: MCP and CLI refuse external state symlinks", async () => {
+test("HOF-08: MCP and CLI refuse external state symlinks", async (t) => {
   const { symlinkSync, unlinkSync } = await import("node:fs");
   const { spawnSync } = await import("node:child_process");
   const root = scaffold();
@@ -337,7 +337,11 @@ test("HOF-08: MCP and CLI refuse external state symlinks", async () => {
   for (const file of ["open-loops.md", "attempts.md"]) {
     const path = join(root, ".handoff", file);
     unlinkSync(path);
-    symlinkSync(outside, path);
+    try { symlinkSync(outside, path); }
+    catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "EPERM") return t.skip("symlinks unavailable");
+      throw err;
+    }
   }
   const c = new Client(root);
   try {

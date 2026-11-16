@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { readOrEmpty, readJson, appendLine, writeFileSafe, writeJson } from "../src/util/fs.js";
 import { withFileLock } from "../src/util/lock.js";
 
-test("HOF-08: state helpers reject symlink reads writes and lock traversal", async () => {
+test("HOF-08: state helpers reject symlink reads writes and lock traversal", async (t) => {
   const root = await fs.mkdtemp(join(tmpdir(), "handoff-symlink-"));
   const state = join(root, "project", ".handoff");
   const outside = join(root, "outside");
@@ -15,7 +15,11 @@ test("HOF-08: state helpers reject symlink reads writes and lock traversal", asy
   const victim = join(outside, "victim");
   await fs.writeFile(victim, '{"marker":"OUTSIDE_STATE"}');
   const target = join(state, "attempts.md");
-  await fs.symlink(victim, target);
+  try { await fs.symlink(victim, target); }
+  catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "EPERM") return t.skip("symlinks unavailable");
+    throw err;
+  }
   for (const operation of [
     () => readOrEmpty(target), () => readJson(target),
     () => appendLine(target, "append"), () => writeFileSafe(target, "overwrite"),
