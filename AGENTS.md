@@ -67,6 +67,11 @@ an unreadable file flags its entry and never aborts a primer.
 Primers annotate stale evidence at render time without changing stored entries.
 Regression coverage lives in `tests/evidence.test.ts`.
 
+## Keyed revocation (HOF-06)
+`splitEntries` keeps fenced Markdown headings and dividers inside their owning entry,
+so filtering a revoked fact removes its entire body. Preserve this boundary in primers;
+parser and CLI/hook/switch regressions live in `tests/ranking.test.ts` and `tests/revocation.test.ts`.
+
 ## Lessons
 Corrections, gotchas, and "don't do X again" notes accumulate in `.claude/lessons.md`
 and are consolidated by the `dream` skill. Read them before non-trivial work.

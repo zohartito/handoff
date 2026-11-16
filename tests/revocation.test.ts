@@ -164,3 +164,51 @@ test("HOF-06: CLI hook and switch full primers omit revoked facts", async () => 
   assert.doesNotMatch(selected.primer, /OLD_DEPLOY_VALUE|OLD_INDENT_VALUE/);
   assert.match(await fs.readFile(join(root, ".handoff/decisions.md"), "utf8"), /OLD_DEPLOY_VALUE/);
 });
+
+for (const fence of ["```", "~~~~"]) {
+  test(`HOF-06: fenced H2 revoked facts stay out of CLI hook and switch primers (${fence})`, async () => {
+    const { spawnSync } = await import("node:child_process");
+    const { decide } = await import("../src/commands/decide.js");
+    const { selectPrimer } = await import("../src/commands/switch.js");
+    const { resolveHandoffPaths } = await import("../src/format/paths.js");
+    const root = await fs.mkdtemp(join(tmpdir(), "handoff-fenced-revocation-"));
+    await fs.mkdir(join(root, ".handoff"));
+    const paths = resolveHandoffPaths(root);
+    const oldDecision = `previous deployment example\n\n${fence}markdown\n## REVOKED_FENCED_DECISION\nold deploy body\n${fence}`;
+    const oldCorrection = `previous style example\n\n${fence}markdown\n## REVOKED_FENCED_CORRECTION\nold style body\n${fence}`;
+    const currentDecision = `current deployment example\n\n${fence}markdown\n## CURRENT_FENCED_DECISION\ncurrent deploy body\n${fence}`;
+    const currentCorrection = `current style example\n\n${fence}markdown\n## CURRENT_FENCED_CORRECTION\ncurrent style body\n${fence}`;
+    await decide({ cwd: root, choice: oldDecision, key: "deploy.target" });
+    await correct({ cwd: root, action: "indent", userSaid: oldCorrection, key: "style.indent", quiet: true });
+    await new Promise((r) => setTimeout(r, 5));
+    await decide({ cwd: root, choice: currentDecision, key: "deploy.target" });
+    await correct({ cwd: root, action: "indent", userSaid: currentCorrection, key: "style.indent", quiet: true });
+    await decide({ cwd: root, choice: "UNRELATED_ACTIVE_DECISION" });
+    const storedDecisions = await fs.readFile(paths.decisions, "utf8");
+    const storedCorrections = await fs.readFile(paths.corrections, "utf8");
+    assert.ok(storedDecisions.includes(oldDecision), "revocation preserves the full decision for audit");
+    assert.ok(storedCorrections.includes(oldCorrection), "revocation preserves the full correction for audit");
+    assert.match(storedDecisions, /\*\*superseded:\*\* true/);
+    assert.match(storedCorrections, /\*\*superseded:\*\* true/);
+
+    const cli = fileURLToPath(new URL("../src/cli.js", import.meta.url));
+    const outputs: Array<[string, string]> = [];
+    for (const args of [["prime"], ["prime", "--tool", "cursor"], ["hook", "session-start"]]) {
+      const result = spawnSync(process.execPath, [cli, ...args], { cwd: root, encoding: "utf8", input: "{}" });
+      assert.equal(result.status, 0, result.stderr);
+      const primer = args[0] === "hook"
+        ? JSON.parse(result.stdout).hookSpecificOutput.additionalContext as string
+        : result.stdout;
+      outputs.push([args.join(" "), primer]);
+    }
+    outputs.push(["switch selection", (await selectPrimer(paths, "cursor", false)).primer]);
+    for (const [surface, primer] of outputs) {
+      assert.doesNotMatch(primer, /REVOKED_FENCED_DECISION|REVOKED_FENCED_CORRECTION|old deploy body|old style body/, surface);
+      assert.ok(primer.includes(currentDecision), `${surface} keeps the complete active decision`);
+      assert.ok(primer.includes(currentCorrection), `${surface} keeps the complete active correction`);
+      assert.match(primer, /UNRELATED_ACTIVE_DECISION/, surface);
+    }
+    assert.equal(await fs.readFile(paths.decisions, "utf8"), storedDecisions, "primers never rewrite decision history");
+    assert.equal(await fs.readFile(paths.corrections, "utf8"), storedCorrections, "primers never rewrite correction history");
+  });
+}
