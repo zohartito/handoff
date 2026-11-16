@@ -24,7 +24,14 @@ export async function assertSafeStatePath(path: string): Promise<boolean> {
     if (stat.isSymbolicLink()) {
       throw new UnsafeStatePathError("unsafe handoff state: symlink traversal refused");
     }
-    const rel = relative(realRoot, await fs.realpath(current));
+    let realCurrent: string;
+    try { realCurrent = await fs.realpath(current); }
+    catch (err) {
+      // A cooperating writer can release a lock between lstat and realpath.
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") break;
+      throw err;
+    }
+    const rel = relative(realRoot, realCurrent);
     if (isAbsolute(rel) || rel === ".." || rel.startsWith(".." + sep)) {
       throw new UnsafeStatePathError("unsafe handoff state: path escapes the project");
     }
