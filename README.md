@@ -42,7 +42,8 @@ Requires Node 22.22.3+ (the minimum validated runtime, also covered by CI). The 
 npm install -g @zohartito/handoff
 ```
 
-Or install from source as a fallback:
+These docs describe the 0.9.2 source release. If the published npm build does not yet provide `compact`, `stale`, `--key`, or `--evidence`, install this checkout from source and run `npm run release:check` to verify its built commands:
+
 
 ```bash
 git clone https://github.com/zohartito/handoff.git

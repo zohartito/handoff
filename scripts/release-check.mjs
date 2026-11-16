@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // HOF-01: check the built distribution, including an unpacked npm tarball.
 import assert from "node:assert/strict";
-import { readFileSync, mkdtempSync } from "node:fs";
+import { readFileSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve, join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -33,5 +33,10 @@ for (const command of ["decide", "correct"]) {
 const hint = run(["init"]).match(/handoff prime[^\n]*/)?.[0];
 assert.ok(hint, "init should print a primer command");
 run(["prime", "--tool", "generic"]);
+writeFileSync(join(cwd, "evidence.txt"), "release smoke evidence\n");
+run(["decide", "release smoke choice", "--key", "release.choice", "--evidence", "evidence.txt"]);
+run(["correct", "release smoke action", "--user-said", "retain release evidence", "--key", "release.rule", "--evidence", "evidence.txt"]);
+run(["stale", "--check"]);
+run(["compact"]);
 assert.ok(!/prime <target-tool>/.test(hint), "init must not suggest positional prime syntax");
 console.log(`release check: ${pkg.version}, ${commands.length} documented commands and their options passed`);
