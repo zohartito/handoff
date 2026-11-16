@@ -159,7 +159,7 @@ One-shot handoff. Saves current state, builds a tool-specific primer, copies it 
 - `--no-save` skips the env refresh.
 - `--no-launch` copies the primer to the clipboard but does not spawn the tool. Useful if the target tool is already open.
 
-Supported targets: `claude-code`, `claude-desktop`, `cursor`, `codex`, `gemini`, `generic`. For `claude-desktop` the launch step is always skipped (GUI app, no reliable CLI shim) — primer is copied, you open Claude Desktop and paste into the relevant Project yourself.
+Supported switch targets: `claude-code`, `claude-desktop`, `cursor`, `codex`, `gemini`. For a generic primer, use `handoff prime --tool generic`. For `claude-desktop` the launch step is always skipped (GUI app, no reliable CLI shim) — primer is copied, you open Claude Desktop and paste into the relevant Project yourself.
 
 ### `handoff obsidian sync [--vault <path>] [--project <path>]`
 
