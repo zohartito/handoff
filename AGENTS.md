@@ -29,7 +29,8 @@ Review the diff and commit only after these repository-local checks pass.
     `tests/retrieval.test.ts` + `tests/evaluate.test.ts` via `node --test`; emits `loop-result/v1`
     JSON; exit code = gate. Reuses the existing suites (does NOT duplicate them).
   - Schedule: `scripts/launchd/com.zohartito.handoff.retrieval-eval.plist` (nightly 03:00).
-    NOT loaded — load with `launchctl load ~/Library/LaunchAgents/com.zohartito.handoff.retrieval-eval.plist`.
+    NOT loaded — replace the checkout placeholder in the plist, copy it into
+    `~/Library/LaunchAgents/`, then load that copy with `launchctl load`.
   - Flywheel: local runs append to `.claude/LEARNINGS.md`; `--ci`/`--dry-run` skip the append.
   - Note: this is the scheduled complement to the session-end self-improving loop
     (the checks above) — it guards ranking/metric drift when no PR is open.
