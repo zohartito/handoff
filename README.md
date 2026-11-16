@@ -36,7 +36,7 @@ State is saved, primer is on your clipboard, Cursor is launching. Paste the prim
 
 ## Installation
 
-Requires Node 22.5+ (the Cursor ingest adapter uses the built-in `node:sqlite` module, which stabilised in 22.5). No other runtime dependencies beyond `commander`.
+Requires Node 22.22.3+ (the minimum validated runtime, also covered by CI). The Cursor adapter uses built-in `node:sqlite`, which is experimental in Node 22; the launcher suppresses that SQLite warning. No other runtime dependencies beyond `commander`.
 
 ```bash
 npm install -g @zohartito/handoff
@@ -436,7 +436,7 @@ Everything through v7 has shipped (0.7.x): Claude Code auto-inject hooks, Claude
 
 - Validated live on Windows and macOS (full CLI pass on real hardware; clipboard via `pbcopy` confirmed). Linux is covered by the CI test matrix but launcher/clipboard paths haven't run on a live Linux desktop — file issues if you hit one.
 - Proactive rate-limit warning is not possible yet. Claude Code only fires `StopFailure` after the limit is hit. Blocked upstream.
-- `handoff ingest --from cursor` requires Node 22+ for built-in `node:sqlite`. On Node 20 it exits with a clear error.
+- Node 20 is unsupported. SQLite is imported during CLI startup, so an unsupported runtime can fail before argument handling, even for `--help`; use the minimum Node version listed under Installation.
 
 ## Contributing
 

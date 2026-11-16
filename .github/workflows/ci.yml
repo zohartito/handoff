@@ -21,13 +21,13 @@ jobs:
         # macOS runners bill at 10x with a 1-minute-per-job minimum, so a 20-second
         # job costs 10 minutes. Reserve them for manual runs; push/PR uses the rest.
         os: ${{ github.event_name == 'workflow_dispatch' && fromJSON('["ubuntu-latest","macos-latest","windows-latest"]') || fromJSON('["ubuntu-latest","windows-latest"]') }}
-        node: [22, 24]
+        node: [22.22.3, 24]
     steps:
     - uses: actions/checkout@v7
       with:
         fetch-depth: 0
     - name: Run gitleaks
-      if: ${{ matrix.os == 'ubuntu-latest' && matrix.node == 22 }}
+      if: ${{ matrix.os == 'ubuntu-latest' && matrix.node == '22.22.3' }}
       uses: gitleaks/gitleaks-action@v3
       env:
           # No GITLEAKS_LICENSE needed: gitleaks-action is free for personal
