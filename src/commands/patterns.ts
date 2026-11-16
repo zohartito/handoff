@@ -1,3 +1,4 @@
+import { readOrEmpty, exists } from "../util/fs.js";
 import { promises as fs } from "node:fs";
 import { homedir } from "node:os";
 import { delimiter as pathDelimiter, join, resolve } from "node:path";
@@ -154,8 +155,7 @@ async function walk(dir: string, depth: number, found: Set<string>): Promise<voi
   );
   if (hasHandoffMeta) {
     try {
-      await fs.access(join(dir, ".handoff", "meta.json"));
-      found.add(dir);
+      if (await exists(join(dir, ".handoff", "meta.json"))) found.add(dir);
     } catch {
       // .handoff/ exists but no meta.json — skip, it isn't a real project yet.
     }
@@ -193,21 +193,13 @@ async function detectLanguage(projectDir: string): Promise<string> {
 
 async function readSourceTool(projectDir: string): Promise<string> {
   try {
-    const raw = await fs.readFile(join(projectDir, ".handoff", "meta.json"), "utf8");
+    const raw = await readOrEmpty(join(projectDir, ".handoff", "meta.json"));
     const meta = JSON.parse(raw) as { sourceTool?: unknown };
     if (typeof meta.sourceTool === "string" && meta.sourceTool) return meta.sourceTool;
   } catch {
     // fall through
   }
   return "unknown";
-}
-
-async function readOrEmpty(path: string): Promise<string> {
-  try {
-    return await fs.readFile(path, "utf8");
-  } catch {
-    return "";
-  }
 }
 
 // ---------------------------------------------------------------------------

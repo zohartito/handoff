@@ -4,7 +4,7 @@ import { promises as fs } from "node:fs";
 import { homedir, platform } from "node:os";
 import { resolve } from "node:path";
 import { resolveHandoffPaths, type HandoffPaths } from "../format/paths.js";
-import { exists, readJson, readOrEmpty } from "../util/fs.js";
+import { assertSafeStatePath, exists, readJson, readOrEmpty } from "../util/fs.js";
 import { collectGitState, commitsSince, commitsSincePathChange } from "../util/git.js";
 import { SCHEMA_VERSION, type Meta } from "../format/types.js";
 import { loadMeta } from "../format/migrate.js";
@@ -439,7 +439,8 @@ async function checkStaleJsonl(
   label: string,
 ): Promise<Check | null> {
   try {
-    const stat = await fs.stat(path);
+    await assertSafeStatePath(path);
+    const stat = await fs.lstat(path);
     if (stat.size > 1) return null; // has real content
     return {
       level: "warn",

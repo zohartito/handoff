@@ -1,4 +1,5 @@
 import { promises as fs } from "node:fs";
+import { assertSafeStatePath } from "./fs.js";
 import { dirname } from "node:path";
 
 /**
@@ -34,6 +35,7 @@ function sleep(ms: number): Promise<void> {
 }
 
 async function tryCreateLock(lockPath: string): Promise<boolean> {
+  await assertSafeStatePath(lockPath);
   await fs.mkdir(dirname(lockPath), { recursive: true });
   try {
     const handle = await fs.open(lockPath, "wx");
@@ -53,7 +55,8 @@ async function tryCreateLock(lockPath: string): Promise<boolean> {
 async function maybeStealStaleLock(lockPath: string): Promise<boolean> {
   let stat: Awaited<ReturnType<typeof fs.stat>>;
   try {
-    stat = await fs.stat(lockPath);
+    await assertSafeStatePath(lockPath);
+    stat = await fs.lstat(lockPath);
   } catch {
     // Lock disappeared between the failed create and now — caller will retry
     // the create.
@@ -87,6 +90,7 @@ export async function withFileLock<T>(
   filePath: string,
   fn: () => Promise<T>,
 ): Promise<T> {
+  await assertSafeStatePath(filePath);
   const lockPath = `${filePath}.lock`;
   const startedAt = Date.now();
   let backoff = __lockConfig.initialBackoffMs;
@@ -94,6 +98,7 @@ export async function withFileLock<T>(
   while (true) {
     if (await tryCreateLock(lockPath)) {
       try {
+        await assertSafeStatePath(filePath);
         return await fn();
       } finally {
         try {

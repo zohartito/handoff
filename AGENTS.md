@@ -48,6 +48,10 @@ boundary: no lossy summarization of load-bearing traces). Idempotent.
 `obsidian sync` maintains `.handoff/obsidian-ids.json` for independent note identities.
 Keep it with the logs; content edits and later sync dates retain the same note.
 
+## State file safety
+All `.handoff/` reads and writes use the guarded helpers in `src/util/fs.ts`.
+Reject state symlinks (including parent directories); replacements are atomic.
+
 ## Evidence freshness
 `decide` and `correct` accept `--evidence <paths...>` (MCP: `evidence: string[]`).
 `src/commands/evidence.ts` hashes repo-contained files and checks recorded hashes;

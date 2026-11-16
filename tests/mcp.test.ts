@@ -327,3 +327,31 @@ test("stdout carries ONLY valid JSON-RPC — no stray log output leaks in", asyn
     await c.close();
   }
 });
+
+test("HOF-08: MCP and CLI refuse external state symlinks", async () => {
+  const { symlinkSync, unlinkSync } = await import("node:fs");
+  const { spawnSync } = await import("node:child_process");
+  const root = scaffold();
+  const outside = join(mkdtempSync(join(tmpdir(), "handoff-outside-")), "data.md");
+  writeFileSync(outside, "OUTSIDE_STATE_MARKER");
+  for (const file of ["open-loops.md", "attempts.md"]) {
+    const path = join(root, ".handoff", file);
+    unlinkSync(path);
+    symlinkSync(outside, path);
+  }
+  const c = new Client(root);
+  try {
+    for (const [name, args] of [
+      ["handoff_open_loops", {}],
+      ["handoff_log_attempt", { what: "synthetic attempt" }],
+    ] as const) {
+      const res = await c.request("tools/call", { name, arguments: args });
+      assert.equal(res.result.isError, true);
+      assert.ok(!JSON.stringify(res.result).includes("OUTSIDE_STATE_MARKER"));
+    }
+    assert.equal(readFileSync(outside, "utf8"), "OUTSIDE_STATE_MARKER");
+    const result = spawnSync(process.execPath, [CLI, "prime"], { cwd: root, encoding: "utf8" });
+    assert.notEqual(result.status, 0);
+    assert.doesNotMatch(result.stdout, /OUTSIDE_STATE_MARKER/);
+  } finally { await c.close(); }
+});

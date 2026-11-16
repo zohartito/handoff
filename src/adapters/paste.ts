@@ -105,11 +105,7 @@ export async function buildPasteSummary(opts: {
   const paths = resolveHandoffPaths(opts.project);
   const transcriptMd = join(paths.dir, "transcript.md");
   let text: string;
-  try {
-    text = await fs.readFile(transcriptMd, "utf8");
-  } catch {
-    return null;
-  }
+  text = await readOrEmpty(transcriptMd);
   if (text.trim().length === 0) return null;
   return renderPasteSummary({ text, source: transcriptMd });
 }
