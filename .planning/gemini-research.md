@@ -8,7 +8,7 @@ Feasible, **medium difficulty**. Gemini CLI stores chat history on disk as JSON 
 
 - **Repo**: `google-gemini/gemini-cli` (open-source, Apache 2.0).
 - **Launch command**: `gemini` (interactive TUI) or `gemini -p "..."` (non-interactive).
-- **Install**: npm — `npm install -g @google/gemini-cli`. On Windows, binary lands at `%APPDATA%\npm\gemini.cmd`. Confirmed installed on this machine: `C:\Users\zohar_4ta16fp\AppData\Roaming\npm\gemini.cmd`.
+- **Install**: npm — `npm install -g @google/gemini-cli`. On Windows, binary lands at `%APPDATA%\npm\gemini.cmd`. Confirmed installed on this machine: `C:\Users\sample_user\AppData\Roaming\npm\gemini.cmd`.
 - This is distinct from "Gemini Code Assist" (IDE plugin) and the Gemini web app.
 
 ## 3. Storage locations
@@ -34,7 +34,7 @@ Observed layout on this machine:
 
 `projects.json` from this machine:
 ```json
-{"projects": {"c:\\users\\zohar_4ta16fp": "zohar-4ta16fp"}}
+{"projects": {"c:\\users\\sample_user": "sample-user"}}
 ```
 
 Note: the hash is a **slugified basename**, not a content hash — at least for top-level home dirs. For nested projects it's a sha256-style hash (per docs); the mapping table in `projects.json` is authoritative.
@@ -91,4 +91,4 @@ Array of message objects; each has `role` ∈ {`user`, `model`} and a `parts[]` 
 - https://github.com/google-gemini/gemini-cli/discussions/1538 (resume behavior)
 - https://deepwiki.com/google-gemini/gemini-cli/3.9-session-management (SessionInfo fields)
 - https://ai.google.dev/gemini-api/docs/function-calling (functionCall/functionResponse shape)
-- Local inspection: `C:\Users\zohar_4ta16fp\.gemini\` (projects.json, tmp layout)
+- Local inspection: `C:\Users\sample_user\.gemini\` (projects.json, tmp layout)

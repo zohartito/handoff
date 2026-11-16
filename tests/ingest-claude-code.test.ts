@@ -74,23 +74,23 @@ test("summarizeSession skips malformed JSONL lines without crashing", async () =
 });
 
 test("cwdMatchesProject: exact and descendant paths match, unrelated paths do not", () => {
-  const proj = "C:\\Users\\zohar_4ta16fp\\handoff";
+  const proj = "C:\\Users\\sample_user\\handoff";
   // exact match (same case)
-  assert.equal(cwdMatchesProject("C:\\Users\\zohar_4ta16fp\\handoff", proj), true);
+  assert.equal(cwdMatchesProject("C:\\Users\\sample_user\\handoff", proj), true);
   // case-insensitive (Windows paths)
-  assert.equal(cwdMatchesProject("c:\\users\\zohar_4ta16fp\\handoff", proj, "win32"), true);
+  assert.equal(cwdMatchesProject("c:\\users\\sample_user\\handoff", proj, "win32"), true);
   // trailing slash tolerated
-  assert.equal(cwdMatchesProject("C:\\Users\\zohar_4ta16fp\\handoff\\", proj), true);
+  assert.equal(cwdMatchesProject("C:\\Users\\sample_user\\handoff\\", proj), true);
   // descendant
-  assert.equal(cwdMatchesProject("C:\\Users\\zohar_4ta16fp\\handoff\\src", proj), true);
+  assert.equal(cwdMatchesProject("C:\\Users\\sample_user\\handoff\\src", proj), true);
   // forward-slash mix
-  assert.equal(cwdMatchesProject("C:/Users/zohar_4ta16fp/handoff", proj), true);
+  assert.equal(cwdMatchesProject("C:/Users/sample_user/handoff", proj), true);
   // parent is NOT a match — this is the bug Codex found
-  assert.equal(cwdMatchesProject("C:\\Users\\zohar_4ta16fp", proj), false);
+  assert.equal(cwdMatchesProject("C:\\Users\\sample_user", proj), false);
   // sibling is not a match
-  assert.equal(cwdMatchesProject("C:\\Users\\zohar_4ta16fp\\other", proj), false);
+  assert.equal(cwdMatchesProject("C:\\Users\\sample_user\\other", proj), false);
   // prefix-only (no separator) is not a match: /foo/handoff-extra should NOT match /foo/handoff
-  assert.equal(cwdMatchesProject("C:\\Users\\zohar_4ta16fp\\handoff-extra", proj), false);
+  assert.equal(cwdMatchesProject("C:\\Users\\sample_user\\handoff-extra", proj), false);
   // null cwd never matches
   assert.equal(cwdMatchesProject(null, proj), false);
 });

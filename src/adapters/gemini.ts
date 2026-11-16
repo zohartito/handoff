@@ -162,7 +162,7 @@ async function readProjectsJson(path: string): Promise<Record<string, string>> {
 /**
  * `projects.json` keys are absolute paths normalized to forward slashes and,
  * on Windows, fully lowercased (Gemini lowercases the whole path, not just
- * the drive letter — observed key on this machine is `c:\\users\\zohar_4ta16fp`,
+ * the drive letter — observed key on this machine is `c:\\users\\sample_user`,
  * note lowercase `users`). We apply the same normalization to the path
  * we're looking up so the comparison is sound on a case-insensitive FS.
  */
@@ -176,7 +176,7 @@ function normalizePath(p: string): string {
 
 /**
  * Build a normalized-key view of projects.json. Gemini on Windows stores keys
- * with backslashes like `c:\\users\\zohar_4ta16fp`; normalize those to
+ * with backslashes like `c:\\users\\sample_user`; normalize those to
  * forward-slashes to match the project path we're comparing against.
  */
 function normalizedProjectMap(raw: Record<string, string>): Map<string, string> {

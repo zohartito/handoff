@@ -252,7 +252,7 @@ export async function emitOutput(
  * Claude Code normalizes project paths into folder names under
  * ~/.claude/projects/, by replacing `:`, `\`, `/`, and `_` all with `-`.
  *
- *   C:\Users\zohar_4ta16fp\handoff  →  C--Users-zohar-4ta16fp-handoff
+ *   C:\Users\sample_user\handoff  →  C--Users-sample-user-handoff
  */
 function encodeProjectPath(projectPath: string): string {
   return projectPath.replace(/[:\\/_]/g, "-");
