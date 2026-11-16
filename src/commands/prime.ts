@@ -331,8 +331,8 @@ function rateLimitSection(tool: Tool, variant: "full" | "compact"): string {
   const target = suggestedSwitchTarget(tool);
   if (variant === "compact") {
     return [
-      `Signals: latency spikes, \`429\`/rate-limit errors, user hits a cap, long pauses.`,
-      `If any: log \`handoff correct "rate limit on ${tool}"\`, tell user \`handoff switch ${target}\`, summarize in-flight.`,
+      `Signals: slow calls/pauses, \`429\`, rate limits or user caps.`,
+      `Log \`handoff correct "rate limit on ${tool}" --user-said "<quote>"\`; suggest \`handoff switch ${target}\`; summarize.`,
     ].join("\n");
   }
   return [
