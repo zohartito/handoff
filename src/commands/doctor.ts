@@ -1,3 +1,4 @@
+import { MANAGED_HOOKS } from "./managed-hooks.js";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { promises as fs } from "node:fs";
@@ -249,22 +250,18 @@ async function checkClaudeHooks(cwd: string): Promise<Check[]> {
       continue;
     }
     const hooks = (settings.hooks ?? {}) as Record<string, unknown>;
-    const hookChecks: Array<[string, string, string]> = [
-      ["SessionStart", "session-start", "primer injection on new session"],
-      ["Stop", "stop", "auto-save on session end"],
-      ["StopFailure", "rate-limit", "capture rate-limit event"],
-    ];
     const present: string[] = [];
     const missing: string[] = [];
-    for (const [event, subcmd, _desc] of hookChecks) {
+    const requiredCount = MANAGED_HOOKS.filter((h) => !h.optional).length;
+    for (const { event, subcmd, optional } of MANAGED_HOOKS) {
       if (hasHandoffCommand(hooks[event], `handoff hook ${subcmd}`)) {
         present.push(event);
-      } else {
+      } else if (!optional) {
         missing.push(event);
       }
     }
     if (missing.length === 0) {
-      checks.push({ level: "ok", label: `${label}: all 3 hooks installed` });
+      checks.push({ level: "ok", label: `${label}: all ${requiredCount} required hooks installed (${present.join(", ")})` });
     } else if (present.length === 0) {
       checks.push({
         level: "warn",
@@ -274,7 +271,7 @@ async function checkClaudeHooks(cwd: string): Promise<Check[]> {
     } else {
       checks.push({
         level: "warn",
-        label: `${label}: ${present.length}/3 hooks (missing: ${missing.join(", ")})`,
+        label: `${label}: installed ${present.join(", ")}; missing required: ${missing.join(", ")}`,
       });
     }
   }

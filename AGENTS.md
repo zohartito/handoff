@@ -48,6 +48,9 @@ boundary: no lossy summarization of load-bearing traces). Idempotent.
 `obsidian sync` maintains `.handoff/obsidian-ids.json` for independent note identities.
 Keep it with the logs; content edits and later sync dates retain the same note.
 
+## Managed hooks
+Install, doctor and removal share `src/commands/managed-hooks.ts`, including optional hooks.
+
 ## State file safety
 All `.handoff/` reads and writes use the guarded helpers in `src/util/fs.ts`.
 Reject state symlinks (including parent directories); replacements are atomic.

@@ -66,3 +66,24 @@ test("`handoff install --tool claude-desktop` mentions Obsidian MCP as an option
   // because `handoff obsidian sync` composes with it.
   assert.match(out, /Obsidian/);
 });
+
+test("HOF-27: removal and doctor recognize optional handoff hooks", async () => {
+  const { uninstall } = await import("../src/commands/uninstall.js");
+  const { mkdtemp, mkdir, writeFile } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { spawnSync } = await import("node:child_process");
+  const installed = await captureStdout(() => install({ tool: "claude-code" }));
+  const removal = await captureStdout(() => uninstall({ tool: "claude-code" }));
+  for (const command of installed.match(/handoff hook [a-z-]+/g) ?? []) assert.ok(removal.includes(command), command);
+  assert.match(removal, /handoff hook user-prompt-submit/);
+  const root = await mkdtemp(join(tmpdir(), "handoff-hook-removal-"));
+  await mkdir(join(root, ".claude"));
+  await writeFile(join(root, ".claude/settings.json"), JSON.stringify({
+    hooks: { PreCompact: [{ hooks: [{ type: "command", command: "handoff hook pre-compact" }] }] },
+  }));
+  const cli = new URL("../src/cli.js", import.meta.url).pathname;
+  const result = spawnSync(process.execPath, [cli, "doctor"], { cwd: root, encoding: "utf8", env: { ...process.env, HOME: root, USERPROFILE: root } });
+  assert.match(result.stdout, /PreCompact/);
+  assert.doesNotMatch(result.stdout, /project \(\.claude\/settings.json\): no handoff hooks/);
+});
