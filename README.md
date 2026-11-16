@@ -71,7 +71,7 @@ Refreshes the environment snapshot in `environment.md` — os, user, node versio
 
 ### `handoff attempt <what> [--error <trace>] [--fix <desc>] [--summary <text>]`
 
-Logs a failed approach to `attempts.md` and `transcript.jsonl`. Use this the moment you know an approach didn't pan out — the next tool needs to know not to retry it.
+Logs a failed approach to `attempts.md`. Use this the moment you know an approach didn't pan out — the next tool needs to know not to retry it.
 
 ```bash
 handoff attempt "run migration with --force" \
@@ -263,9 +263,8 @@ A `.handoff/` directory looks like this:
   open-loops.md       # unresolved questions, TODOs for next session
   references.md       # links, docs, issue numbers
   meta.json           # schema version, source tool, timestamps, project root
-  files.json          # manifest of the above
-  tool-history.jsonl  # append-only per-tool event log
-  transcript.jsonl    # append-only narrative log
+  files.json          # placeholder written by init; no command maintains it yet
+  transcript.md       # pasted conversation text, appended by `capture` / `ingest --from paste`
 ```
 
 **Format constraints:**

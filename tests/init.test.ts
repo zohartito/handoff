@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, existsSync } from "node:fs";
+import { mkdtempSync, rmSync, existsSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
@@ -117,4 +117,20 @@ test("HOF-18: status distinguishes templates seeds and saved environment", async
   const after: string[] = [];
   await quiet(() => status({ cwd: root }), after);
   assert.match(after.join("\n"), /environment\.md\s+filled/);
+});
+
+test("HOF-25 HOF-N5: generated guide and README list only logs a command writes", async () => {
+  const dir = makeTmpDir();
+  try {
+    await quiet(() => init({ cwd: dir, from: "test" }));
+    const guide = readFileSync(resolveHandoffPaths(dir).handoffMd, "utf8");
+    for (const name of ["tool-history.jsonl", "transcript.jsonl", "file manifest with hashes"]) {
+      assert.ok(!guide.includes(name), `HANDOFF.md must not promise ${name}`);
+    }
+    const readme = readFileSync(fileURLToPath(new URL("../../README.md", import.meta.url)), "utf8");
+    assert.ok(!/attempts\.md` and `transcript\.jsonl`/.test(readme), "README must not say attempt writes transcript.jsonl");
+    assert.ok(!/append-only (per-tool event|narrative) log/.test(readme), "README layout must not list unwritten logs");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
