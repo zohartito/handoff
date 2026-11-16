@@ -149,36 +149,47 @@ export async function prime(opts: PrimeOpts): Promise<void> {
   const useSubagent = !!opts.subagent;
   const useCompact = !useSubagent && (opts.compact || maxChars < COMPACT_THRESHOLD);
 
-  const output = useSubagent
-    ? await buildSubagentPrimer(paths, opts.tool)
-    : useCompact
-      ? await buildCompactPrimer(paths, opts.tool)
-      : await buildPrimer(paths, opts.tool, maxChars);
-
-  process.stdout.write(output);
-  if (!output.endsWith("\n")) process.stdout.write("\n");
-
-  // Constraint-preserving compaction guard. The compact/subagent primers are a
-  // lossy compaction step; verify every user constraint survived it. If one was
-  // dropped (only possible under pathological budget pressure, since the block
-  // is shed-protected), fail loudly rather than hand off a primer missing a
-  // guardrail. stderr keeps stdout — the primer itself — clean for piping.
-  if (useCompact || useSubagent) {
-    const constraints = extractConstraints(await readOrEmpty(paths.corrections));
-    const { ok, missing } = verifyConstraintsPreserved(output, constraints);
-    if (!ok) {
-      console.error(
-        `\n⚠️  handoff: ${missing.length} user constraint(s) were dropped during ` +
-          `compaction and could NOT be re-injected:`,
-      );
-      for (const m of missing) console.error(`   - ${m.text}`);
-      console.error(
-        "   This primer is missing a guardrail. Use `handoff prime` (full) " +
-          "or raise --max-chars.",
-      );
-      process.exitCode = 1;
-    }
+  try {
+    const output = await buildCheckedPrimer(paths, opts.tool, {
+      mode: useSubagent ? "subagent" : useCompact ? "compact" : "full",
+      maxChars: opts.maxChars,
+    });
+    process.stdout.write(output);
+  } catch (err) {
+    if (!(err instanceof PrimerBudgetError)) throw err;
+    console.error(err.message);
+    process.exitCode = 1;
   }
+}
+
+export class PrimerBudgetError extends Error {}
+
+/** One delivery gate shared by CLI, MCP and switching. Never emit a partial guardrail. */
+export async function buildCheckedPrimer(
+  paths: HandoffPaths,
+  tool: Tool,
+  opts: { mode: "full" | "compact" | "subagent"; maxChars?: number },
+): Promise<string> {
+  const budget = opts.maxChars ?? (opts.mode === "full" ? Infinity :
+    opts.mode === "compact" ? COMPACT_THRESHOLD : SUBAGENT_BUDGET);
+  if (!(budget > 0) || (budget !== Infinity && !Number.isInteger(budget))) {
+    throw new PrimerBudgetError("--max-chars must be a positive integer.");
+  }
+  const output = opts.mode === "full" ? await buildPrimer(paths, tool, budget) :
+    opts.mode === "compact" ? await buildCompactPrimer(paths, tool, budget) :
+    await buildSubagentPrimer(paths, tool, budget);
+  const constraints = extractConstraints(await readOrEmpty(paths.corrections));
+  const { missing } = verifyConstraintsPreserved(output, constraints);
+  if (missing.length) {
+    throw new PrimerBudgetError(
+      `${missing.length} user constraint(s) were dropped during compaction; no primer emitted. ` +
+      "Use handoff prime (full) or raise --max-chars.",
+    );
+  }
+  if (output.length > budget || output.includes("_(primer truncated to fit)_")) {
+    throw new PrimerBudgetError("Mandatory primer content cannot fit the character budget; raise --max-chars.");
+  }
+  return output;
 }
 
 export async function buildPrimer(
@@ -607,6 +618,7 @@ function shedToBudget(parts: string[], budget: number): string {
 export async function buildCompactPrimer(
   paths: HandoffPaths,
   tool: Tool,
+  budget = COMPACT_THRESHOLD,
 ): Promise<string> {
   const parts: string[] = [];
   parts.push(`# HANDOFF PRIMER (compact)`);
@@ -699,7 +711,7 @@ export async function buildCompactPrimer(
   const record = await computeHandoverRecord(paths, "compact");
   parts.push(`## Handover fidelity\n\n${renderLossLine(record)}`);
 
-  return shedToBudget(parts, COMPACT_THRESHOLD);
+  return shedToBudget(parts, budget);
 }
 
 /**
@@ -744,6 +756,7 @@ function extractEnvOneLine(raw: string): string {
 export async function buildSubagentPrimer(
   paths: HandoffPaths,
   _tool: Tool,
+  budget = SUBAGENT_BUDGET,
 ): Promise<string> {
   const parts: string[] = [];
   parts.push(`# HANDOFF PRIMER (subagent)`);
@@ -807,5 +820,5 @@ export async function buildSubagentPrimer(
   const record = await computeHandoverRecord(paths, "subagent");
   parts.push(`## Handover fidelity\n\n${renderLossLine(record)}`);
 
-  return shedToBudget(parts, SUBAGENT_BUDGET);
+  return shedToBudget(parts, budget);
 }

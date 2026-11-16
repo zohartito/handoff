@@ -1,17 +1,14 @@
 import { spawn } from "node:child_process";
 import { platform } from "node:os";
 import { resolveHandoffPaths } from "../format/paths.js";
-import { exists, readOrEmpty, writeJson } from "../util/fs.js";
+import { exists, writeJson } from "../util/fs.js";
 import {
   buildPrimer,
-  buildCompactPrimer,
+  buildCheckedPrimer,
+  PrimerBudgetError,
   detectHandoffTaxDirection,
   type Tool,
 } from "./prime.js";
-import {
-  extractConstraints,
-  verifyConstraintsPreserved,
-} from "../format/constraints.js";
 import { loadMeta } from "../format/migrate.js";
 import { save } from "./save.js";
 
@@ -174,11 +171,11 @@ export async function selectPrimer(
     };
   }
 
-  const compact = await buildCompactPrimer(paths, tool);
-  const constraints = extractConstraints(await readOrEmpty(paths.corrections));
-  const { ok } = verifyConstraintsPreserved(compact, constraints);
-  if (ok) {
+  try {
+    const compact = await buildCheckedPrimer(paths, tool, { mode: "compact" });
     return { primer: compact, mode: "compact", constraintFallback: false };
+  } catch (err) {
+    if (!(err instanceof PrimerBudgetError)) throw err;
   }
 
   // Compaction would have shed a user guardrail. Opt-in or not, we do not hand

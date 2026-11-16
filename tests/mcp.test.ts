@@ -355,3 +355,17 @@ test("HOF-08: MCP and CLI refuse external state symlinks", async () => {
     assert.doesNotMatch(result.stdout, /OUTSIDE_STATE_MARKER/);
   } finally { await c.close(); }
 });
+
+test("HOF-09: MCP reports constraint loss as an error", async () => {
+  const root = scaffold();
+  writeFileSync(join(root, ".handoff/corrections.md"), "# Corrections\n" +
+    Array.from({ length: 25 }, (_, i) =>
+      `\n## 2026-01-${String(i + 1).padStart(2, "0")}T00:00:00Z\n\n**user said:** constraint ${i} ${"guardrail ".repeat(20)}\n\n---\n`).join(""));
+  const c = new Client(root);
+  try {
+    const res = await c.request("tools/call", { name: "handoff_context", arguments: {} });
+    assert.equal(res.result.isError, true);
+    assert.match(res.result.content[0].text, /constraint|budget/);
+    assert.doesNotMatch(res.result.content[0].text, /# HANDOFF PRIMER/);
+  } finally { await c.close(); }
+});

@@ -105,7 +105,7 @@ Both commands accept `--evidence <paths...>` (also `evidence: string[]` on their
 
 ### `handoff prime [--tool <tool>] [--max-chars <n>]`
 
-Emits a tool-specific primer prompt to stdout. Pipe it, redirect it, or read it. `--tool` accepts `claude-code`, `claude-desktop`, `cursor`, `codex`, `gemini`, or `generic`. `--max-chars` caps the output length for tools with tight context budgets.
+Emits a tool-specific primer prompt to stdout. Pipe it, redirect it, or read it. `--tool` accepts `claude-code`, `claude-desktop`, `cursor`, `codex`, `gemini`, or `generic`. `--max-chars` caps the output length for tools with tight context budgets, including compact and subagent mode. Compact defaults to 2000 characters; an explicit larger cap increases that budget. If mandatory content or user constraints cannot fit, the CLI emits no primer and exits with an error; MCP reports the same failure as a tool error.
 
 ### `handoff install --tool <claude-code|claude-desktop|cursor>`
 

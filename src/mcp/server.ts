@@ -1,7 +1,7 @@
 import { createInterface } from "node:readline";
 import { resolveHandoffPaths, type HandoffPaths } from "../format/paths.js";
 import { exists, readOrEmpty } from "../util/fs.js";
-import { buildCompactPrimer, VALID_TOOLS, type Tool } from "../commands/prime.js";
+import { buildCheckedPrimer, VALID_TOOLS, type Tool } from "../commands/prime.js";
 import { correct } from "../commands/correct.js";
 import { attempt } from "../commands/attempt.js";
 import { decide } from "../commands/decide.js";
@@ -102,7 +102,7 @@ export const TOOLS: ToolDef[] = [
     },
     handler: async (args, ctx) => {
       const tool = (args.tool as Tool) ?? "generic";
-      const text = await buildCompactPrimer(ctx.paths, tool);
+      const text = await buildCheckedPrimer(ctx.paths, tool, { mode: "compact" });
       return { text };
     },
   },
