@@ -12,10 +12,13 @@ Portable session-state CLI for AI coding tools. When you switch mid-task between
   baseline in `docs/first-run-before.json`; see `docs/first-run-walkthrough.md`.
 
 ## Self-improving loop (close the loop)
-Run an agent until it verifies its own output, then commit:
+After installing declared dependencies with `npm ci`, verify locally before committing:
+```bash
+npm test
+npm run lint
+git diff --check
 ```
-python3 ~/.agent-kit/verify_loop.py --task "<what to do>" --verify "npm test && npm run lint" --cwd . --max-iters 5 --commit
-```
+Review the diff and commit only after these repository-local checks pass.
 
 ## Layout
 `.claude/`, `.github/`, `.handoff/`, `.planning/`, `bin/`, `scripts/`, `src/`, `templates/`, `tests/`
@@ -29,7 +32,7 @@ python3 ~/.agent-kit/verify_loop.py --task "<what to do>" --verify "npm test && 
     NOT loaded — load with `launchctl load ~/Library/LaunchAgents/com.zohartito.handoff.retrieval-eval.plist`.
   - Flywheel: local runs append to `.claude/LEARNINGS.md`; `--ci`/`--dry-run` skip the append.
   - Note: this is the scheduled complement to the session-end self-improving loop
-    (`verify_loop.py`) — it guards ranking/metric drift when no PR is open.
+    (the checks above) — it guards ranking/metric drift when no PR is open.
 
 ## Log lifecycle (append → compact → archive)
 The log files (`attempts.md`, `corrections.md`, `decisions.md`) are append-only, so they
