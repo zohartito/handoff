@@ -183,12 +183,30 @@ test("switch stamps lastActiveTool so the next switch keys direction off the dep
   }
 });
 
+// A clipboard that accepts the primer, so the message does not depend on the host (Linux CI has
+// no clipboard tool) and the test never touches the developer's real clipboard. Windows keeps clip.exe.
+async function withFakeClipboard(run: () => Promise<void>): Promise<void> {
+  if (process.platform === "win32") return run();
+  const { mkdtempSync, writeFileSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join, delimiter } = await import("node:path");
+  const bin = mkdtempSync(join(tmpdir(), "handoff-fake-clip-"));
+  for (const name of ["pbcopy", "wl-copy"]) writeFileSync(join(bin, name), "#!/bin/sh\ncat >/dev/null\n", { mode: 0o755 });
+  const original = process.env.PATH;
+  process.env.PATH = bin + delimiter + (original ?? "");
+  try {
+    await run();
+  } finally {
+    process.env.PATH = original;
+  }
+}
+
 test("switch never says 'stripped' on an escalation unless --compact is passed", async () => {
   // Departing tool is codex (tier 3) → claude-code (tier 1) = escalate.
   const { root } = scaffold("claude-code", "codex");
   const cap = captureStderr();
   try {
-    await switchTool({ tool: "cursor", cwd: root, noSave: true, noLaunch: true });
+    await withFakeClipboard(() => switchTool({ tool: "cursor", cwd: root, noSave: true, noLaunch: true }));
   } finally {
     const out = cap.restore();
     assert.match(out, /full primer copied to clipboard/);
