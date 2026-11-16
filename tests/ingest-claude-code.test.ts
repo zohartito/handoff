@@ -225,11 +225,12 @@ test("summarizeSession: empty file returns a well-formed empty summary", async (
 });
 
 test("HOF-21: latest ingest refuses sibling sessions unless explicitly selected", async () => {
-  const { mkdtemp, mkdir, writeFile, readFile } = await import("node:fs/promises");
+  const { mkdtemp, mkdir, writeFile, readFile, realpath } = await import("node:fs/promises");
   const { tmpdir } = await import("node:os");
   const { join } = await import("node:path");
   const { spawnSync } = await import("node:child_process");
-  const root = await mkdtemp(join(tmpdir(), "handoff-scoped-ingest-"));
+  // macOS tmpdir() is a symlink (/var -> /private/var); the CLI sees the resolved cwd.
+  const root = await realpath(await mkdtemp(join(tmpdir(), "handoff-scoped-ingest-")));
   const project = join(root, "target");
   const home = join(root, "home");
   await mkdir(join(project, ".handoff"), { recursive: true });
