@@ -125,7 +125,7 @@ Reads past AI agent sessions and produces a structured markdown summary. Useful 
 - `--from gemini` reads Gemini saved chats / checkpoints from `~/.gemini/tmp/...`.
 - `--from paste` reads a transcript you've already copied out of a tool that has no on-disk logs (Claude Desktop, ChatGPT web, etc.). Exactly one of `--file <path>`, `--stdin`, or `--clipboard` must be supplied. The raw paste lands in `.handoff/transcript.md`; the rendered summary goes to `.handoff/ingested-context.md`.
 - `--list` enumerates available sessions instead of ingesting.
-- `--session <id>` picks a specific session; omit to use the most recent.
+- `--session <id>` picks a specific session; Claude Code automatic selection uses the most recent session whose recorded cwd matches the project. If none matches, it fails; use an explicit session ID to intentionally import a parent or sibling session.
 - `--out <path>` writes the summary to a file; omit for stdout.
 - `--project <path>` scopes the search to a specific project root.
 

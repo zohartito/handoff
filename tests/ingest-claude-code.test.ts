@@ -223,3 +223,32 @@ test("summarizeSession: empty file returns a well-formed empty summary", async (
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("HOF-21: latest ingest refuses sibling sessions unless explicitly selected", async () => {
+  const { mkdtemp, mkdir, writeFile, readFile } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { spawnSync } = await import("node:child_process");
+  const root = await mkdtemp(join(tmpdir(), "handoff-scoped-ingest-"));
+  const project = join(root, "target");
+  const home = join(root, "home");
+  await mkdir(join(project, ".handoff"), { recursive: true });
+  const encoded = root.replace(/[^a-zA-Z0-9]/g, "-");
+  const sessions = join(home, ".claude", "projects", encoded);
+  await mkdir(sessions, { recursive: true });
+  await writeFile(join(sessions, "sibling-session.jsonl"), JSON.stringify({
+    type: "user", cwd: join(root, "sibling"), timestamp: "2026-11-15T00:00:00Z",
+    sessionId: "sibling-session", message: { role: "user", content: "SIBLING_ONLY_MARKER" },
+  }) + "\n");
+  const cli = new URL("../src/cli.js", import.meta.url).pathname;
+  const run = (...args: string[]) => spawnSync(process.execPath, [cli, "ingest", "--from", "claude-code", ...args], {
+    cwd: project, encoding: "utf8", env: { ...process.env, HOME: home, USERPROFILE: home },
+  });
+  const latest = run();
+  assert.equal(latest.status, 1);
+  assert.doesNotMatch(latest.stdout, /SIBLING_ONLY_MARKER/);
+  await assert.rejects(() => readFile(join(project, ".handoff/ingested-context.md")));
+  const explicit = run("--session", "sibling-session");
+  assert.equal(explicit.status, 0, explicit.stderr);
+  assert.match(await readFile(join(project, ".handoff/ingested-context.md"), "utf8"), /SIBLING_ONLY_MARKER/);
+});
