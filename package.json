@@ -1,7 +1,7 @@
 {
   "name": "@zohartito/handoff",
-  "version": "0.9.1",
-  "description": "Portable agent state across AI coding tools — hand off mid-task between Claude Code, Claude Desktop, Cursor, Codex, and Gemini without re-explaining.",
+  "version": "0.9.2",
+  "description": "Portable agent state across AI coding tools \u2014 hand off mid-task between Claude Code, Claude Desktop, Cursor, Codex, and Gemini without re-explaining.",
   "type": "module",
   "bin": {
     "handoff": "./bin/handoff.mjs"
@@ -19,7 +19,8 @@
     "lint": "tsc --noEmit && tsc -p tsconfig.test.json --noEmit",
     "test": "tsc -p tsconfig.test.json && node scripts/run-tests.mjs",
     "test:watch": "tsc -p tsconfig.test.json && node scripts/run-tests.mjs --watch",
-    "prepublishOnly": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && npm run build"
+    "prepublishOnly": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && npm run build",
+    "release:check": "npm run build && node scripts/release-check.mjs"
   },
   "keywords": [
     "ai",

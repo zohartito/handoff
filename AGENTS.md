@@ -6,6 +6,7 @@ Portable session-state CLI for AI coding tools. When you switch mid-task between
 ## How to verify a change
 - Tests: `npm test`
 - Lint:  `npm run lint`
+- Release: `npm run release:check`; also run `node scripts/release-check.mjs <unpacked-package>` against the local npm tarball before publishing.
 - First-run walkthrough: `npm run build && node scripts/first-run-walkthrough.mjs`.
   Runs in a temporary repo and compares the current build with the recorded
   baseline in `docs/first-run-before.json`; see `docs/first-run-walkthrough.md`.
