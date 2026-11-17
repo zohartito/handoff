@@ -5,6 +5,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { capturePrompt } from "../src/commands/asks.js";
 import { resolveHandoffPaths } from "../src/format/paths.js";
 
 /**
@@ -190,12 +191,14 @@ test("tools/call handoff_context returns primer text content", async () => {
 
 test("tools/call handoff_open_loops returns the open loops", async () => {
   const cwd = scaffold();
+  await capturePrompt(resolveHandoffPaths(cwd), "Also keep <!-- prototype --> verbatim.", "s", true);
   const c = new Client(cwd);
   try {
     await c.request("initialize", {});
     const res = await c.request("tools/call", { name: "handoff_open_loops", arguments: {} });
     assert.equal(res.result.isError, false);
     assert.match(res.result.content[0].text, /protocolVersion to advertise/);
+    assert.match(res.result.content[0].text, /Also keep <!-- prototype --> verbatim/);
   } finally {
     await c.close();
   }

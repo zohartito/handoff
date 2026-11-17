@@ -4,6 +4,8 @@ import { exists } from "../util/fs.js";
 import { buildPrimer, buildStandingRulesContext } from "./prime.js";
 import { save } from "./save.js";
 import { attempt } from "./attempt.js";
+import { capturePrompt, reconcileCommits, sessionFromPayload } from "./asks.js";
+import { loadCaptureState } from "../util/capture-state.js";
 import { autoCapture } from "./auto-capture.js";
 
 export type HookEvent =
@@ -19,6 +21,8 @@ export type HookEvent =
  * JSONL) and `stop_hook_active` (re-entrancy guard).
  */
 export type HookPayload = {
+  prompt?: string;
+  prompt_id?: string;
   session_id?: string;
   transcript_path?: string;
   cwd?: string;
@@ -60,20 +64,39 @@ export async function hook(opts: HookOpts): Promise<void> {
   }
 
   if (opts.event === "user-prompt-submit") {
+    const payload = opts.payload;
+    const session = sessionFromPayload(payload?.session_id, payload?.transcript_path);
+    if (session && typeof payload?.prompt === "string") {
+      try {
+        const state = await loadCaptureState(paths.captureState);
+        await capturePrompt(paths, payload.prompt, session, !!state.sessions[session]?.lastLineProcessed,
+          typeof payload.prompt_id === "string" ? payload.prompt_id : undefined);
+      } catch {
+        console.error("handoff: failed to persist the prompt's open-loop update");
+      }
+    }
     // Mid-session drift guard. SessionStart covers startup and post-compaction;
     // this covers the long stretch in between, where a constraint logged 200
     // turns ago quietly stops being honoured. Standing rules only — emitting
     // the whole primer on every prompt would be a large recurring token cost.
     const rules = await buildStandingRulesContext(paths);
     if (!rules) return; // nothing durable logged yet: stay silent, cost nothing
-    const payload = {
+    const output = {
       hookSpecificOutput: {
         hookEventName: "UserPromptSubmit",
         additionalContext: rules,
       },
     };
-    await writeStdout(JSON.stringify(payload) + "\n");
+    await writeStdout(JSON.stringify(output) + "\n");
     return;
+  }
+
+  if (opts.event === "stop" || opts.event === "pre-compact") {
+    try {
+      await reconcileCommits(paths);
+    } catch {
+      console.error("handoff: failed to reconcile open asks with commit trailers");
+    }
   }
 
   if (opts.event === "stop") {

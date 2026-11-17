@@ -3,7 +3,7 @@ import { promisify } from "node:util";
 
 const run = promisify(execFile);
 
-async function tryGit(args: string[], cwd: string): Promise<string | null> {
+export async function tryGit(args: string[], cwd: string): Promise<string | null> {
   try {
     const { stdout } = await run("git", args, { cwd, maxBuffer: 4 * 1024 * 1024 });
     return stdout.trim();

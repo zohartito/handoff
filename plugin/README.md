@@ -31,7 +31,7 @@ claude --plugin-dir ./plugin
 | Hook | Does |
 |---|---|
 | `SessionStart` | injects the primer (also re-fires after a compaction) |
-| `UserPromptSubmit` | re-surfaces standing rules mid-session; silent when there are none |
+| `UserPromptSubmit` | captures side requests verbatim and re-surfaces standing rules |
 | `Stop` | refreshes state; auto-captures corrections + failed attempts (low yield — see note) |
 | `PreCompact` | same auto-capture, before the transcript is compacted |
 | `StopFailure` (`rate_limit`) | logs the rate-limit event and suggests a tool to switch to |
