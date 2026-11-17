@@ -239,6 +239,22 @@ Everything below is a **safety net under that**, not a replacement for it.
 
 And `handoff doctor` flags an artifact that has drifted out of sync: commits landing with no `handoff save`, a `task.md` naming a version behind `package.json`, or logs gone quiet across many commits. All advisory — staleness never changes the exit code.
 
+### Verbatim side requests (experimental)
+
+The Claude Code submit hook uses local English cues to identify additional requests. It saves the whole submitted turn as a quote in `.handoff/open-loops.md`, including the UTC date, tool, session and ask ID. One turn can contain several requests. Close it only when the whole turn is accounted for. The hook preserves existing manual Markdown. Prompt text can include pasted material, so review the file before sharing it.
+
+To close a captured ask, use its printed ID in one of these ways.
+
+- After filing it in Linear, run `handoff resolve <ask-id> --issue ZOH-123`. The filing agent supplies the association. The CLI runs offline.
+- Put `Resolves-Ask: <ask-id>` in a Git commit trailer. Stop and PreCompact check reachable commits for the trailer.
+- Tell the session `Close <ask-id>` or `Filed <ask-id> as ZOH-123`. “That open loop is done.” resolves only a single unambiguous ask in the same session.
+
+Closed quotes and their evidence move to `.handoff/ask-history.jsonl`. A retry with the same prompt ID records the event once. With older clients, identical text is deduplicated while the ask is open.
+
+The November 2026 private evaluation labelled a whole user turn positive when it added a distinct or deferred obligation. The check counts a hit only when the saved quote matches the original turn. On 113 development turns it scored 28 true positives, 2 false positives and 3 misses. On the separate 40-turn evaluation session it scored 6 true positives, 2 false positives and 8 misses (75.0% precision, 42.9% recall). This prototype is below the required 80% precision and 90% recall.
+
+On the evaluation machine, `npm test` reads `~/.local/share/handoff/evals/asks-labelled-with-context-2026-11.json`. Set `HANDOFF_ASK_FIXTURE` to use another path. The fixture is a JSON array with `prompt` (original string), `session`, `line` (source line number), `inFlight` (prior capture hook), `expected` (manual boolean label), and `split` (`development` or `evaluation`). Without the private fixture, the public suite skips that gate and runs the synthetic capture and closure tests.
+
 ## File format
 
 A `.handoff/` directory looks like this:
@@ -283,6 +299,7 @@ Claude Code has the deepest integration — hooks in `.claude/settings.json` (th
         ]
       }
     ],
+    "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "handoff hook user-prompt-submit" }] }],
     "Stop": [
       {
         "matcher": "",

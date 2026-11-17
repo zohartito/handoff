@@ -6,6 +6,7 @@ Portable session-state CLI for AI coding tools. When you switch mid-task between
 ## How to verify a change
 - Tests: `npm test`
 - Lint:  `npm run lint`
+- To run the real-prompt capture gate, set `HANDOFF_ASK_FIXTURE` to a private labelled fixture and run `npm test`. Public CI exercises synthetic lifecycle cases.
 - First-run walkthrough: `npm run build && node scripts/first-run-walkthrough.mjs`.
   Runs in a temporary repo and compares the current build with the recorded
   baseline in `docs/first-run-before.json`; see `docs/first-run-walkthrough.md`.

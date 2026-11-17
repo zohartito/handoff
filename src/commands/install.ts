@@ -22,9 +22,10 @@ Two steps.
 
 ## 1. Add hooks to \`~/.claude/settings.json\` (or project \`.claude/settings.json\`)
 
-Four hooks:
+Five hooks:
 - \`SessionStart\` → auto-injects the handoff primer into every new session
   (only when the project has a \`.handoff/\` directory; silent no-op otherwise)
+- \`UserPromptSubmit\` → captures side requests in the user's words and re-surfaces standing rules
 - \`Stop\` → \`handoff save\` refreshes the environment snapshot on session end
   AND auto-captures failed build/test attempts + user corrections from the
   session transcript (a low-yield safety net — ask the outgoing agent to
@@ -48,6 +49,7 @@ ${"```"}json
         ]
       }
     ],
+    "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "handoff hook user-prompt-submit" }] }],
     "Stop": [
       {
         "matcher": "*",

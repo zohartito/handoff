@@ -1,7 +1,7 @@
 import { createInterface } from "node:readline";
 import { resolveHandoffPaths, type HandoffPaths } from "../format/paths.js";
 import { exists, readOrEmpty } from "../util/fs.js";
-import { buildCompactPrimer, VALID_TOOLS, type Tool } from "../commands/prime.js";
+import { buildCompactPrimer, renderOpenLoops, VALID_TOOLS, type Tool } from "../commands/prime.js";
 import { correct } from "../commands/correct.js";
 import { attempt } from "../commands/attempt.js";
 import { decide } from "../commands/decide.js";
@@ -113,7 +113,7 @@ export const TOOLS: ToolDef[] = [
       "next steps recorded in .handoff/open-loops.md. Read-only.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
     handler: async (_args, ctx) => {
-      const cleaned = cleanSection(await readOrEmpty(ctx.paths.openLoops));
+      const cleaned = renderOpenLoops(await readOrEmpty(ctx.paths.openLoops));
       return {
         text: cleaned || "No open loops are recorded in .handoff/open-loops.md.",
       };
@@ -518,24 +518,6 @@ function evidencePaths(value: unknown): string[] | undefined {
     throw new Error("evidence must be an array of file paths.");
   }
   return value;
-}
-
-/**
- * Strip HTML comments and the leading `# Title` line from a section file, then
- * trim. Returns "" when nothing substantive remains.
- */
-function cleanSection(raw: string): string {
-  const s = raw
-    .replace(/<!--[\s\S]*?-->/g, "")
-    .replace(/^#\s+[^\n]*\n/, "")
-    .replace(/\n*---\s*$/g, "")
-    .trim();
-  const meaningful = s
-    .split("\n")
-    .filter((l) => l.trim() && !/^#+\s/.test(l))
-    .join("")
-    .trim();
-  return meaningful ? s : "";
 }
 
 /**

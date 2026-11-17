@@ -4,6 +4,7 @@ import type { Meta } from "../format/types.js";
 import { loadMeta } from "../format/migrate.js";
 import { rankEntries, splitEntries, condenseEntry, entryId, type RankedEntries } from "./ranking.js";
 import { annotateEvidence, staleEntryIds, STALE_ANNOTATION } from "./evidence.js";
+import { readAsks } from "./asks.js";
 import { retrieveFromRaw } from "./retrieval.js";
 import { computeHandoverRecord, renderLossLine } from "../format/handover.js";
 import {
@@ -232,7 +233,7 @@ export async function buildPrimer(
     const raw = await readOrEmpty(s.path);
     const annotated = s.path === paths.decisions || s.path === paths.corrections
       ? await annotateEvidence(paths.root, raw) : raw;
-    const body = cleanBody(annotated);
+    const body = s.path === paths.openLoops ? renderOpenLoops(raw) : cleanBody(annotated);
     if (!body) continue;
     parts.push({ title: s.label, body });
   }
@@ -370,6 +371,20 @@ function cleanBody(raw: string): string {
     .trim();
   if (!meaningful) return "";
   return s;
+}
+
+/** Strip legacy template comments only outside verbatim user submissions. */
+export function renderOpenLoops(raw: string): string {
+  const parts: string[] = [];
+  let offset = 0;
+  for (const ask of readAsks(raw)) {
+    const start = raw.indexOf(ask.block, offset);
+    parts.push(cleanBody(raw.slice(offset, start)));
+    parts.push(ask.block.slice(0, ask.block.lastIndexOf("<!-- end handoff ask -->")));
+    offset = start + ask.block.length;
+  }
+  parts.push(cleanBody(raw.slice(offset)));
+  return parts.filter(Boolean).join("\n\n");
 }
 
 function cleanImportedContext(raw: string): string {
@@ -638,7 +653,7 @@ export async function buildCompactPrimer(
   }
 
   // 2. Open loops — always full (tiny by nature).
-  const openLoops = cleanBody(await readOrEmpty(paths.openLoops));
+  const openLoops = renderOpenLoops(await readOrEmpty(paths.openLoops));
   if (openLoops) {
     parts.push(`## Open loops\n\n${openLoops}`);
   }

@@ -14,6 +14,8 @@ import { save } from "./commands/save.js";
 import { prime } from "./commands/prime.js";
 import { install } from "./commands/install.js";
 import { uninstall } from "./commands/uninstall.js";
+import { fileAsk } from "./commands/asks.js";
+import { resolveHandoffPaths } from "./format/paths.js";
 import { hook, type HookPayload } from "./commands/hook.js";
 import { ingest } from "./commands/ingest.js";
 import { switchTool } from "./commands/switch.js";
@@ -239,6 +241,19 @@ program
   .description("scan the current project + global install for common issues")
   .action(async () => {
     await doctor();
+  });
+
+program
+  .command("resolve <ask>")
+  .description("close an open ask after filing it in Linear (offline)")
+  .requiredOption("--issue <id>", "the issue that now tracks this ask")
+  .action(async (ask, opts) => {
+    try {
+      await fileAsk(resolveHandoffPaths(process.cwd()), ask, opts.issue);
+    } catch (error) {
+      console.error(error instanceof Error ? error.message : String(error));
+      process.exitCode = 1;
+    }
   });
 
 program
