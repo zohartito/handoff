@@ -2,6 +2,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   computeMetrics,
   loadScenarios,
@@ -12,6 +15,9 @@ import {
   recency,
   STRATEGIES,
   DEFAULT_K,
+  classifyPreservation,
+  evaluatePrimerScenario,
+  primerMacro,
   type Scenario,
 } from "../src/commands/evaluate.js";
 import { PROMOTION_THRESHOLD, entryId } from "../src/commands/ranking.js";
@@ -175,4 +181,57 @@ test("recency ignores the task text (control is genuinely task-blind)", async ()
   const withTask = recency(s.corpus, s.task, s.k);
   const withoutTask = recency(s.corpus, "totally different task text", s.k);
   assert.deepEqual(withTask, withoutTask);
+});
+
+// ---------------------------------------------------------------------------
+// --primer: preservation in the REAL compact/subagent primer text
+// ---------------------------------------------------------------------------
+
+test("classifyPreservation: verbatim, standing line, truncated header, missing", () => {
+  const entry = "## 2026-01-01T00:00:00Z\n\n**tried:** reuse the cache\n\n**why failed:** stale reads";
+  assert.equal(classifyPreservation(`x\n${entry}\ny`, entry), "verbatim");
+  assert.equal(classifyPreservation("- reuse the cache  _(theme seen 3×)_", entry), "standing");
+  assert.equal(classifyPreservation("## 2026-01-01T00:00:00Z\n\n**tried:** reuse…", entry), "truncated");
+  assert.equal(classifyPreservation("nothing here", entry), "missing");
+});
+
+test("primer mode on the fixtures: every relevant entry survives; the record over-counts loss", async () => {
+  const scenarios = await loadScenarios(EVAL_DIR);
+  const results = [];
+  for (const s of scenarios) results.push(await evaluatePrimerScenario(s));
+  for (const variant of ["compact", "subagent"] as const) {
+    const m = primerMacro(results, variant);
+    approx(m.allRec, 1, `${variant} All-Rec`);
+    approx(m.recall, 1, `${variant} recall`);
+  }
+  // stale-security: the footer predicts 4 dropped corrections, but the verbatim
+  // constraints block carries every one of their rules.
+  const stale = results.find((r) => r.scenario === "stale-security")!;
+  assert.equal(stale.compact.observedDropped, 0);
+  assert.ok(stale.compact.predictedDropped > 0, "record predicts loss the primer did not incur");
+  assert.ok(stale.compact.gap < 0);
+});
+
+test("primer mode: shedToBudget drops entries the handover record counted as carried", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "handoff-eval-shed-"));
+  const pad = "keep the request path strictly inside the configured sandbox root at all times ".repeat(3);
+  const corrections = Array.from({ length: 6 }, (_, i) =>
+    `## 2026-02-0${i + 1}T00:00:00Z\n\n**agent did:** step ${i}\n\n**user said:** rule ${i}: ${pad}\n`).join("\n");
+  const attempts = ["alpha", "bravo", "charlie"].map((w, i) =>
+    `## 2026-03-0${i + 1}T00:00:00Z\n\n**tried:** ${w} approach to the importer\n\n**why failed:** ${w} broke\n`).join("\n");
+  writeFileSync(join(dir, "task.md"), "Fix the importer.\n");
+  writeFileSync(join(dir, "corrections.md"), corrections);
+  writeFileSync(join(dir, "attempts.md"), attempts);
+  writeFileSync(join(dir, "labels.json"), JSON.stringify({ relevant: ["2026-03-03T00:00:00Z"], k: 5 }));
+  try {
+    const r = await evaluatePrimerScenario(await loadScenario(dir));
+    // The constraints block is shed-protected, so budget pressure removes the
+    // attempts sections; the record (ranking-stage caps only) still counts them.
+    assert.ok(r.compact.chars <= 2000);
+    assert.equal(r.compact.relevant["2026-03-03T00:00:00Z"], "missing");
+    assert.equal(r.compact.allRec, false);
+    assert.ok(r.compact.gap > 0, `expected positive gap, got ${r.compact.gap}`);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

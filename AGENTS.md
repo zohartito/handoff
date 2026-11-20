@@ -30,6 +30,11 @@ python3 ~/.agent-kit/verify_loop.py --task "<what to do>" --verify "npm test && 
   - Note: this is the scheduled complement to the session-end self-improving loop
     (`verify_loop.py`) — it guards ranking/metric drift when no PR is open.
 
+## Primer preservation eval
+`handoff evaluate --primer` renders the real compact/subagent primers per `tests/fixtures/eval`
+scenario and classifies each labelled-relevant entry as verbatim / standing (condensed or
+constraint line) / truncated / missing, with All-Rec and the gap to `computeHandoverRecord`'s residual.
+
 ## Log lifecycle (append → compact → archive)
 The log files (`attempts.md`, `corrections.md`, `decisions.md`) are append-only, so they
 grow without bound (same failure re-logged on every recurrence). `handoff compact`
