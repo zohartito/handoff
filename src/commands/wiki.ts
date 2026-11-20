@@ -1,12 +1,14 @@
 import { resolveHandoffPaths } from "../format/paths.js";
 import { appendLine, exists, readOrEmpty } from "../util/fs.js";
 import { withFileLock } from "../util/lock.js";
-import { splitEntries, isSuperseded } from "./ranking.js";
+import { splitEntries, isSuperseded, entryId } from "./ranking.js";
 
 export interface WikiEntry {
   title: string;
   body: string;
   addedAt: string;
+  /** Heading id of the corrections.md entry a distilled lesson came from. */
+  source?: string;
 }
 
 export interface WikiDistillResult {
@@ -113,7 +115,7 @@ export async function wikiDistill(opts: WikiDistillOpts = {}): Promise<WikiDisti
   // lessons are missing, and serialize only their appends — producing duplicate
   // durable entries despite the idempotence guarantee.
   const correctionsRaw = await readOrEmpty(paths.corrections);
-  const lessons = extractLessons(correctionsRaw);
+  const lessons = extractLessonsWithSource(correctionsRaw);
   const ts = new Date().toISOString();
 
   const computeToAdd = (wikiRaw: string): WikiEntry[] => {
@@ -121,12 +123,15 @@ export async function wikiDistill(opts: WikiDistillOpts = {}): Promise<WikiDisti
       parseWikiEntries(wikiRaw).map((e) => normalizeLesson(e.body)),
     );
     const out: WikiEntry[] = [];
-    for (const lesson of lessons) {
+    for (const { lesson, source } of lessons) {
       const normalized = normalizeLesson(lesson);
       if (existingBodies.has(normalized)) continue;
       // Deduplicate within this batch too.
       if (out.some((e) => normalizeLesson(e.body) === normalized)) continue;
-      out.push({ title: deriveTitle(lesson), body: lesson, addedAt: ts });
+      out.push({
+        title: deriveTitle(lesson), body: lesson, addedAt: ts,
+        ...(source ? { source } : {}),
+      });
       existingBodies.add(normalized);
     }
     return out;
@@ -169,6 +174,7 @@ function formatWikiEntry(e: WikiEntry): string {
     `## ${e.title}`,
     ``,
     `_Added: ${e.addedAt}_`,
+    ...(e.source ? [`_Source: corrections.md#${e.source}_`] : []),
     ``,
     e.body,
     ``,
@@ -198,14 +204,18 @@ export function parseWikiEntries(raw: string): WikiEntry[] {
     const addedMatch = trimmed.match(/_Added:\s*([^\n_]+)_/);
     if (addedMatch) addedAt = addedMatch[1]!.trim();
 
-    // Body: everything after the title and addedAt line, before the trailing ---
+    const sourceMatch = trimmed.match(SOURCE_RE);
+    const source = sourceMatch ? sourceMatch[1]!.trim() : undefined;
+
+    // Body: everything after the title, addedAt and source lines, before the trailing ---
     const bodyRaw = lines.slice(1).join("\n")
       .replace(/_Added:[^\n]*_\n?/, "")
+      .replace(SOURCE_RE, "")
       .replace(/\n---\s*$/, "")
       .trim();
 
     if (!title || !bodyRaw) continue;
-    entries.push({ title, body: bodyRaw, addedAt });
+    entries.push({ title, body: bodyRaw, addedAt, ...(source ? { source } : {}) });
   }
   return entries;
 }
@@ -222,18 +232,57 @@ export function parseWikiEntries(raw: string): WikiEntry[] {
  * drop the superseded ones before pulling lessons.
  */
 export function extractLessons(correctionsRaw: string): string[] {
-  const lessons: string[] = [];
+  return extractLessonsWithSource(correctionsRaw).map((l) => l.lesson);
+}
+
+/** Like {@link extractLessons}, plus the `## <id>` heading of each lesson's entry. */
+export function extractLessonsWithSource(
+  correctionsRaw: string,
+): Array<{ lesson: string; source: string | null }> {
+  const lessons: Array<{ lesson: string; source: string | null }> = [];
   const lessonRe = /^\*\*lesson:\*\*\s+(.+)/gm;
   for (const entry of splitEntries(correctionsRaw)) {
     if (isSuperseded(entry)) continue;
+    const source = entryId(entry);
     let m: RegExpExecArray | null;
     lessonRe.lastIndex = 0;
     while ((m = lessonRe.exec(entry)) !== null) {
       const lesson = m[1]!.trim();
-      if (lesson) lessons.push(lesson);
+      if (lesson) lessons.push({ lesson, source });
     }
   }
   return lessons;
+}
+
+const SOURCE_RE = /^_Source: corrections\.md#([^\n]+)_[ \t]*(?:\n|$)/m;
+export const RETIRED_SOURCE_ANNOTATION =
+  " (source correction superseded or removed: re-check before trusting)";
+
+/**
+ * Render-time check that a distilled wiki entry's source correction is still
+ * live. Distill skips superseded corrections, but an entry already in wiki.md
+ * outlives its source: when `revokeActiveByKey` later retires that correction
+ * (or it is deleted), the wiki would keep stating the old rule unmarked.
+ * Entries whose Source id no longer names an active correction get an
+ * annotation on their Source line, unless another active correction still
+ * teaches the same lesson. wiki.md itself is never rewritten; entries without
+ * a Source line (manual `wiki add`, pre-existing distills) are untouched.
+ */
+export function annotateWikiSources(wikiRaw: string, correctionsRaw: string): string {
+  if (!SOURCE_RE.test(wikiRaw)) return wikiRaw;
+  const activeIds = new Set<string | null>();
+  for (const entry of splitEntries(correctionsRaw)) {
+    if (!isSuperseded(entry)) activeIds.add(entryId(entry));
+  }
+  const activeLessons = new Set(extractLessons(correctionsRaw).map(normalizeLesson));
+  return wikiRaw.split(/(?=^## )/m).map((block) => {
+    const m = block.match(SOURCE_RE);
+    if (!m || activeIds.has(m[1]!.trim())) return block;
+    const [entry] = parseWikiEntries(block);
+    if (entry && activeLessons.has(normalizeLesson(entry.body))) return block;
+    const line = m[0].replace(/\n$/, "");
+    return block.replace(line, line + RETIRED_SOURCE_ANNOTATION);
+  }).join("");
 }
 
 /** Title is the first sentence (up to '.', '!', or '?' or 60 chars). */

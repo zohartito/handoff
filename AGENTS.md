@@ -66,6 +66,8 @@ Reject state symlinks (including parent directories); replacements are atomic.
 an unreadable file flags its entry and never aborts a primer.
 Primers annotate stale evidence at render time without changing stored entries.
 Regression coverage lives in `tests/evidence.test.ts`.
+`wiki distill` writes `_Source: corrections.md#<id>_` per entry; the full primer flags wiki
+entries whose source correction is superseded or gone (`annotateWikiSources`, `tests/wiki.test.ts`).
 
 ## Keyed revocation (HOF-06)
 `splitEntries` keeps fenced Markdown headings and dividers inside their owning entry,

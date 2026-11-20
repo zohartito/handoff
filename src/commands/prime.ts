@@ -4,6 +4,7 @@ import type { Meta } from "../format/types.js";
 import { loadMeta } from "../format/migrate.js";
 import { rankEntries, splitEntries, isSuperseded, condenseEntry, entryId, type RankedEntries } from "./ranking.js";
 import { annotateEvidence, staleEntryIds, STALE_ANNOTATION } from "./evidence.js";
+import { annotateWikiSources } from "./wiki.js";
 import { retrieveFromRaw } from "./retrieval.js";
 import { computeHandoverRecord, renderLossLine } from "../format/handover.js";
 import {
@@ -242,7 +243,10 @@ export async function buildPrimer(
   for (const s of sections) {
     const raw = await readOrEmpty(s.path);
     const annotated = s.path === paths.decisions || s.path === paths.corrections
-      ? await annotateEvidence(paths.root, splitEntries(raw).filter((e) => !isSuperseded(e)).join("\n\n---\n\n")) : raw;
+      ? await annotateEvidence(paths.root, splitEntries(raw).filter((e) => !isSuperseded(e)).join("\n\n---\n\n"))
+      : s.path === paths.wiki
+        ? annotateWikiSources(raw, await readOrEmpty(paths.corrections))
+        : raw;
     const body = cleanBody(annotated);
     if (!body) continue;
     parts.push({ title: s.label, body });
