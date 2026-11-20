@@ -143,6 +143,63 @@ export function detectCorrections(session: ParsedSession): Correction[] {
   return out;
 }
 
+/**
+ * Session constraints: rules the user states for this session ("ask me before
+ * you migrate", "don't mention my employer"). They are neither the task nor a
+ * correction, so `detectCorrections` never sees them (it skips the first message
+ * and needs a correction cue), and context compaction is exactly where they get
+ * lost. Captured into corrections.md, they ride `extractConstraints` into the
+ * verbatim block of every compacted primer.
+ *
+ * Phrases that are directives wherever they appear in a sentence.
+ */
+const CONSTRAINT_ANYWHERE =
+  /\b(ask me first|without asking|from now on|for this session|make sure|confirm with me|(don'?t|do not) (mention|reveal|call me))\b/i;
+/** Cues that are only directives at the start of a sentence ("Never X", not "it never X"). */
+const CONSTRAINT_LEADING =
+  /^(?:(?:please|also|and|but|just|ok|okay|so)[,\s]+)*(always|never|confirm|before you)\b/i;
+/** Modal directives addressed to the agent. */
+const CONSTRAINT_MODAL = /\byou (must|should always|should never)\b/i;
+/** Interrogative openers: a question asks, it doesn't set a rule. */
+const QUESTION_OPENER =
+  /^(can|could|would|should|did|do|does|is|are|will|why|what|how|when)\b/i;
+/** Per-sentence cap: a rule is one sentence, not a paragraph. */
+const MAX_CONSTRAINT_CHARS = 300;
+
+export type SessionConstraint = {
+  /** The directive sentence, verbatim. */
+  text: string;
+  /** Index of the user turn it came from. */
+  turnIndex: number;
+};
+
+/**
+ * Pull directive sentences out of every user turn, the first message included.
+ * Lexical and verbatim: the sentence is kept exactly as typed, never rephrased.
+ */
+export function detectSessionConstraints(session: ParsedSession): SessionConstraint[] {
+  const out: SessionConstraint[] = [];
+  for (const turn of session.userTurns) {
+    if (INJECTED_ARTIFACT.test(turn.text)) continue;
+    const sentences = turn.text
+      .split(/\n+/)
+      .flatMap((line) => line.split(/(?<=[.!?])\s+/))
+      .map((s) => s.replace(/^\s*(?:[-*•]|\d+[.)])\s+/, "").trim());
+    for (const s of sentences) {
+      if (s.length < 8 || s.length > MAX_CONSTRAINT_CHARS) continue;
+      if (s.endsWith("?") || QUESTION_OPENER.test(s)) continue;
+      if (
+        CONSTRAINT_ANYWHERE.test(s) ||
+        CONSTRAINT_LEADING.test(s) ||
+        CONSTRAINT_MODAL.test(s)
+      ) {
+        out.push({ text: s, turnIndex: turn.index });
+      }
+    }
+  }
+  return out;
+}
+
 export type AutoCaptureOpts = {
   cwd?: string;
   paths?: HandoffPaths;
@@ -150,7 +207,7 @@ export type AutoCaptureOpts = {
 };
 
 /**
- * Auto-capture failed attempts and corrections from a session transcript when a
+ * Auto-capture failed attempts, corrections and session constraints from a session transcript when a
  * Stop / PreCompact hook fires. Curated logs only — never writes a transcript,
  * never emits decisions, never writes to stdout, and never throws out (callers
  * still wrap it defensively). A missing transcript or absent `.handoff/` is a
@@ -220,6 +277,28 @@ export async function autoCapture(opts: AutoCaptureOpts): Promise<void> {
       await correct({
         action: c.agentDid,
         userSaid: c.userSaid,
+        source: "auto",
+        quiet: true,
+        cwd,
+      });
+      newHashes.push(h);
+    } catch {
+      /* per-entry failure is swallowed */
+    }
+  }
+
+  // Session constraints, logged as corrections so the compacted primer carries
+  // them verbatim. Skip a rule already inside a correction logged this run.
+  const constraints = detectSessionConstraints(session)
+    .filter((sc) => !corrections.some((c) => c.userSaid.includes(sc.text)))
+    .slice(-MAX_PER_STOP);
+  for (const sc of constraints) {
+    const h = hashEntry("correct", [sc.text]);
+    if (state.seenHashes.includes(h) || newHashes.includes(h)) continue;
+    try {
+      await correct({
+        action: "(session constraint stated by the user)",
+        userSaid: sc.text,
         source: "auto",
         quiet: true,
         cwd,

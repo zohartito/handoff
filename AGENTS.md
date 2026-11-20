@@ -51,6 +51,13 @@ an unreadable file flags its entry and never aborts a primer.
 Primers annotate stale evidence at render time without changing stored entries.
 Regression coverage lives in `tests/evidence.test.ts`.
 
+## Session constraints
+`detectSessionConstraints` (`src/commands/auto-capture.ts`) pulls directive sentences
+("Always ask me before…", "Don't mention…"), the first message included, out of user turns.
+Stop/PreCompact `autoCapture` logs them verbatim as auto corrections so the compact primer's
+constraint block carries them. Recall/precision vs. the `detectCorrections` baseline is
+gated by `tests/session-constraints.test.ts` on `tests/fixtures/session-constraints/cases.json`.
+
 ## Lessons
 Corrections, gotchas, and "don't do X again" notes accumulate in `.claude/lessons.md`
 and are consolidated by the `dream` skill. Read them before non-trivial work.
