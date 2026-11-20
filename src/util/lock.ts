@@ -1,4 +1,5 @@
 import { promises as fs } from "node:fs";
+import { assertSafeStatePath, readOrEmpty } from "./fs.js";
 import { dirname } from "node:path";
 
 /**
@@ -6,9 +7,8 @@ import { dirname } from "node:path";
  *
  * Uses `fs.open(path, 'wx')` — atomic exclusive create, supported on POSIX and
  * NTFS. On contention, retries with exponential backoff. Stale locks (process
- * crashed without cleanup) are stolen after STALE_MS, subject to a safety
- * fence so we don't rip a freshly-written lock from a concurrent peer that
- * started on the same tick.
+ * crashed without cleanup) are reclaimed after STALE_MS only if their owner
+ * is no longer alive. The age of the acquiring process is irrelevant.
  *
  * Only wrap RMW on markdown files. JSONL paths use fs.appendFile which is its
  * own sync boundary for single-line small writes.
@@ -34,6 +34,7 @@ function sleep(ms: number): Promise<void> {
 }
 
 async function tryCreateLock(lockPath: string): Promise<boolean> {
+  await assertSafeStatePath(lockPath);
   await fs.mkdir(dirname(lockPath), { recursive: true });
   try {
     const handle = await fs.open(lockPath, "wx");
@@ -53,7 +54,8 @@ async function tryCreateLock(lockPath: string): Promise<boolean> {
 async function maybeStealStaleLock(lockPath: string): Promise<boolean> {
   let stat: Awaited<ReturnType<typeof fs.stat>>;
   try {
-    stat = await fs.stat(lockPath);
+    await assertSafeStatePath(lockPath);
+    stat = await fs.lstat(lockPath);
   } catch {
     // Lock disappeared between the failed create and now — caller will retry
     // the create.
@@ -61,19 +63,25 @@ async function maybeStealStaleLock(lockPath: string): Promise<boolean> {
   }
   const now = Date.now();
   const lockAgeMs = now - stat.mtimeMs;
-  const ourAgeMs = now - __lockConfig.processStartMs;
-  // Safety fence: only steal when the lockfile *and* our process are both
-  // older than STALE_MS. This avoids stealing a lock that was freshly written
-  // by a peer on the same tick when both processes just started.
-  if (lockAgeMs > __lockConfig.staleMs && ourAgeMs > __lockConfig.staleMs) {
+  if (lockAgeMs <= __lockConfig.staleMs) return false;
+  let owner: { pid?: number } = {};
+  try { owner = JSON.parse(await readOrEmpty(lockPath)); } catch { /* old malformed lock */ }
+  if (Number.isInteger(owner.pid) && owner.pid! > 0) {
     try {
-      await fs.unlink(lockPath);
-      return true;
-    } catch {
-      // Someone else may have cleaned it up already.
+      process.kill(owner.pid!, 0); // existence check only; does not send a signal
       return false;
+    } catch (err) {
+      // EPERM means the process exists but belongs to somebody else.
+      if ((err as NodeJS.ErrnoException).code !== "ESRCH") return false;
     }
   }
+  try {
+    // Do not remove a replacement written while ownership was being checked.
+    const current = await fs.lstat(lockPath);
+    if (current.ino !== stat.ino || current.mtimeMs !== stat.mtimeMs) return false;
+    await fs.unlink(lockPath);
+    return true;
+  } catch { /* another writer already released/reclaimed it */ }
   return false;
 }
 
@@ -83,10 +91,13 @@ async function maybeStealStaleLock(lockPath: string): Promise<boolean> {
  * The lock is released whether `fn` resolves or rejects. If the lock cannot
  * be acquired within the retry budget, throws an Error.
  */
+export class LockError extends Error {}
+
 export async function withFileLock<T>(
   filePath: string,
   fn: () => Promise<T>,
 ): Promise<T> {
+  await assertSafeStatePath(filePath);
   const lockPath = `${filePath}.lock`;
   const startedAt = Date.now();
   let backoff = __lockConfig.initialBackoffMs;
@@ -94,6 +105,7 @@ export async function withFileLock<T>(
   while (true) {
     if (await tryCreateLock(lockPath)) {
       try {
+        await assertSafeStatePath(filePath);
         return await fn();
       } finally {
         try {
@@ -112,10 +124,10 @@ export async function withFileLock<T>(
 
     const elapsed = Date.now() - startedAt;
     if (elapsed >= __lockConfig.retryBudgetMs) {
-      throw new Error(
+      throw new LockError(
         `withFileLock: could not acquire lock on ${filePath} within ` +
           `${__lockConfig.retryBudgetMs}ms (held by another process at ${lockPath}). ` +
-          `If the holder crashed, the lock will be reclaimed after ${__lockConfig.staleMs}ms.`,
+          "Retry after the active writer finishes; stale locks are reclaimed only when their owner is gone.",
       );
     }
 

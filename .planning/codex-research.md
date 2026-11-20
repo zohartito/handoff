@@ -5,7 +5,7 @@ Feasible and easy-to-medium. The current OpenAI Codex CLI (`@openai/codex`, ship
 
 ## Current product identification
 - Package: `@openai/codex` on npm, invoked as `codex` (CLI) or launched from "Codex Desktop"/VS Code extension.
-- Confirmed locally: `C:\Users\zohar_4ta16fp\AppData\Roaming\npm\codex.cmd` shims to `node_modules/@openai/codex/bin/codex.js`.
+- Confirmed locally: `C:\Users\sample_user\AppData\Roaming\npm\codex.cmd` shims to `node_modules/@openai/codex/bin/codex.js`.
 - Versions seen on this machine: `0.118.0` and `0.119.0-alpha.28`. `cli_version` is written into every rollout's `session_meta` line.
 - Different product from the retired 2021-2023 Codex API. Current CLI wraps GPT-5-class models.
 
@@ -51,4 +51,4 @@ Build it now. Difficulty is comparable to the Claude Code adapter (also JSONL) a
 - https://deepwiki.com/openai/codex/4.4-session-resumption-and-forking — describes append-on-resume and the `session_meta` first-line convention.
 - https://dev.to/shinshin86/no-resume-in-codex-cli-so-i-built-one-quickly-continue-with-codex-history-list-50be — independent confirmation of `~/.codex/sessions/YYYY/MM/DD/` layout.
 - https://github.com/openai/codex/blob/main/docs/config.md — `CODEX_HOME` env var.
-- Primary evidence: `C:\Users\zohar_4ta16fp\.codex\session_index.jsonl` and sample rollout files inspected directly.
+- Primary evidence: `C:\Users\sample_user\.codex\session_index.jsonl` and sample rollout files inspected directly.

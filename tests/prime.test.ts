@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
@@ -605,4 +606,15 @@ test("detectHandoffTaxDirection: unknown source returns lateral", () => {
   assert.equal(detectHandoffTaxDirection(undefined, "claude-code"), "lateral");
   assert.equal(detectHandoffTaxDirection(null, "claude-code"), "lateral");
   assert.equal(detectHandoffTaxDirection("unknown-tool", "claude-code"), "lateral");
+});
+
+test("HOF-30: the compact rate-limit correction command executes", async () => {
+  const { spawnSync } = await import("node:child_process");
+  const paths = scaffoldRealisticHandoff();
+  const primer = await buildCompactPrimer(paths, "generic");
+  const command = primer.match(/`(handoff correct [^`]+)`/)?.[1];
+  assert.ok(command);
+  const args = (command.match(/"[^"]*"|\S+/g) ?? []).slice(1).map((s) => s.replace(/^"|"$/g, ""));
+  const result = spawnSync(process.execPath, [fileURLToPath(new URL("../src/cli.js", import.meta.url)), ...args], { cwd: paths.root, encoding: "utf8" });
+  assert.equal(result.status, 0, result.stderr);
 });

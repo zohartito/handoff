@@ -1,3 +1,5 @@
+import { managedHookSettings } from "./managed-hooks.js";
+
 type Tool = "claude-code" | "claude-desktop" | "cursor";
 
 type UninstallOpts = { tool: Tool };
@@ -27,49 +29,13 @@ Check both locations (you may have hooks in either or both):
 - user-global: \`~/.claude/settings.json\`
 - project:     \`.claude/settings.json\` (at project root)
 
-Remove the three handoff entries from the \`hooks\` object:
+Remove any of these handoff entries (including optional hooks) from the \`hooks\` object:
 
 ${"```"}json
-{
-  "hooks": {
-    "SessionStart": [
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "handoff hook session-start"
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "handoff hook stop"
-          }
-        ]
-      }
-    ],
-    "StopFailure": [
-      {
-        "matcher": "rate_limit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "handoff hook rate-limit"
-          }
-        ]
-      }
-    ]
-  }
-}
+${JSON.stringify(managedHookSettings(true), null, 2)}
 ${"```"}
 
-Delete just these three entries. If other hooks live in the same arrays,
+Delete only matching handoff command entries that are present. If other hooks live in the same arrays,
 keep those. If \`hooks\` becomes empty, you can remove the whole key.
 
 ## 2. Optionally remove the CLAUDE.md section

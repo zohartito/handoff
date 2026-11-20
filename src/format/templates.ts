@@ -27,9 +27,7 @@ below **in order** before taking any action.
 
 Raw logs (read only when you need detail):
 - \`ingested-context.md\` — imported summary from a past tool session (created by \`handoff ingest\`)
-- \`tool-history.jsonl\` — every tool call the prior agent made
-- \`transcript.jsonl\` — raw conversation turns
-- \`files.json\` — file manifest with hashes
+- \`transcript.md\` — pasted conversation text (appended by \`handoff capture\` and \`handoff ingest --from paste\`)
 
 > When you finish a chunk of work, append to the relevant files using the
 > \`handoff attempt|decide|correct|save\` commands so the next agent benefits.
