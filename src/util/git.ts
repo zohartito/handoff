@@ -12,6 +12,35 @@ async function tryGit(args: string[], cwd: string): Promise<string | null> {
   }
 }
 
+/** Preserve exit codes for predicates such as `git check-ignore -q`. */
+async function tryGitExitCode(args: string[], cwd: string): Promise<number | null> {
+  try {
+    await run("git", args, { cwd, maxBuffer: 4 * 1024 * 1024 });
+    return 0;
+  } catch (err) {
+    const code = (err as { code?: unknown }).code;
+    return typeof code === "number" ? code : null;
+  }
+}
+
+/**
+ * Report directory tracking from Git's index, not just ignore rules: a tracked
+ * file stays tracked even if a later ignore rule matches. Returns null outside
+ * a work tree or when Git cannot determine the state.
+ */
+export async function handoffTrackingState(
+  cwd: string,
+  relDir: string,
+): Promise<"tracked" | "ignored" | "untracked" | null> {
+  if ((await tryGit(["rev-parse", "--is-inside-work-tree"], cwd)) !== "true") return null;
+  const tracked = await tryGit(["ls-files", "--", relDir], cwd);
+  if (tracked === null) return null;
+  if (tracked) return "tracked";
+  const code = await tryGitExitCode(["check-ignore", "-q", "--", relDir], cwd);
+  if (code === 0) return "ignored";
+  return code === 1 ? "untracked" : null;
+}
+
 /**
  * Count commits whose commit date is newer than `sinceIso` on the current
  * HEAD. Mirrors the `tryGit` failure contract: returns null when this isn't a

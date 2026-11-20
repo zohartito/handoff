@@ -5,7 +5,7 @@ import { homedir, platform } from "node:os";
 import { resolve } from "node:path";
 import { resolveHandoffPaths, type HandoffPaths } from "../format/paths.js";
 import { exists, readJson, readOrEmpty } from "../util/fs.js";
-import { collectGitState, commitsSince, commitsSincePathChange } from "../util/git.js";
+import { collectGitState, commitsSince, commitsSincePathChange, handoffTrackingState } from "../util/git.js";
 import { SCHEMA_VERSION, type Meta } from "../format/types.js";
 import { loadMeta } from "../format/migrate.js";
 
@@ -196,6 +196,24 @@ export async function doctor(opts: { cwd?: string } = {}): Promise<void> {
       label: `branch: ${branch}`,
       detail: clean ? "working tree clean" : `${changes} change${changes === 1 ? "" : "s"} uncommitted`,
     });
+    if (handoffPresent) {
+      const tracking = await handoffTrackingState(cwd, ".handoff/");
+      if (tracking === "tracked") {
+        gitChecks.push({ level: "ok", label: ".handoff/ is tracked by git" });
+      } else if (tracking === "ignored") {
+        gitChecks.push({
+          level: "warn",
+          label: ".handoff/ is git-ignored",
+          detail: "session state will not survive a fresh clone — if intentional, keep a separate copy; otherwise review your ignore rules",
+        });
+      } else if (tracking === "untracked") {
+        gitChecks.push({
+          level: "warn",
+          label: ".handoff/ is untracked",
+          detail: "session state will not survive a fresh clone — review its contents, then `git add .handoff/` and commit, unless keeping it local is intentional",
+        });
+      }
+    }
   }
   printChecks(gitChecks);
   console.log();
