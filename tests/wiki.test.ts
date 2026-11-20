@@ -10,7 +10,11 @@ import {
   wikiDistill,
   parseWikiEntries,
   extractLessons,
+  annotateWikiSources,
+  RETIRED_SOURCE_ANNOTATION,
 } from "../src/commands/wiki.js";
+import { buildPrimer } from "../src/commands/prime.js";
+import { revokeActiveByKey } from "../src/commands/revocation.js";
 
 function scaffoldHandoff(): ReturnType<typeof resolveHandoffPaths> {
   const dir = mkdtempSync(join(tmpdir(), 'handoff-wiki-'));
@@ -246,4 +250,66 @@ test('wikiDistill - concurrent runs do not create duplicate entries (read+dedup+
   const entries = parseWikiEntries(readFileSync(paths.wiki, 'utf8'));
   const matching = entries.filter((e) => e.body === 'exactly one durable rule');
   assert.equal(matching.length, 1, 'the lesson must appear exactly once, not once per concurrent run');
+});
+
+// --- Evidence-linked wiki entries (source links) -----------------------------
+
+test('wikiDistill - records the source correction id and parseWikiEntries reads it back', async () => {
+  const paths = scaffoldHandoff();
+  writeFileSync(
+    paths.corrections,
+    '# Corrections\n\n## 2026-01-02T00:00:00Z\n\n**key:** paths\n\n**lesson:** prefer pathlib\n\n---\n',
+  );
+  const origLog = console.log;
+  console.log = () => {};
+  try {
+    await wikiDistill({ cwd: paths.root });
+  } finally {
+    console.log = origLog;
+  }
+  const raw = readFileSync(paths.wiki, 'utf8');
+  assert.ok(raw.includes('_Source: corrections.md#2026-01-02T00:00:00Z_'));
+  const [entry] = parseWikiEntries(raw);
+  assert.equal(entry!.source, '2026-01-02T00:00:00Z');
+  assert.equal(entry!.body, 'prefer pathlib', 'source line is not part of the body');
+});
+
+test('buildPrimer - flags a wiki entry once its source correction is superseded', async () => {
+  const paths = scaffoldHandoff();
+  writeFileSync(
+    paths.corrections,
+    '# Corrections\n\n' +
+      '## 2026-01-01T00:00:00Z\n\n**key:** paths\n\n**lesson:** prefer os.path\n\n---\n\n' +
+      '## 2026-01-02T00:00:00Z\n\n**key:** style\n\n**lesson:** use tabs\n\n---\n',
+  );
+  const origLog = console.log;
+  console.log = () => {};
+  try {
+    await wikiDistill({ cwd: paths.root });
+  } finally {
+    console.log = origLog;
+  }
+  const flagged = (primer: string) =>
+    primer.split('\n').filter((l) => l.includes(RETIRED_SOURCE_ANNOTATION));
+  assert.equal(flagged(await buildPrimer(paths, 'generic', Infinity)).length, 0);
+
+  const { updated } = revokeActiveByKey(
+    readFileSync(paths.corrections, 'utf8'), 'paths', '2026-01-03T00:00:00Z', '2026-01-03T00:00:00Z',
+  );
+  writeFileSync(paths.corrections, updated);
+  const lines = flagged(await buildPrimer(paths, 'generic', Infinity));
+  assert.deepEqual(lines, [`_Source: corrections.md#2026-01-01T00:00:00Z_${RETIRED_SOURCE_ANNOTATION}`]);
+  assert.ok(!readFileSync(paths.wiki, 'utf8').includes(RETIRED_SOURCE_ANNOTATION), 'wiki.md is not rewritten');
+});
+
+test('annotateWikiSources - leaves unsourced entries and still-taught lessons alone', () => {
+  const wiki =
+    '# Wiki\n\n## Manual\n\n_Added: 2026-01-01T00:00:00.000Z_\n\nmanual note\n\n---\n\n' +
+    '## Moved\n\n_Added: 2026-01-01T00:00:00.000Z_\n_Source: corrections.md#gone_\n\nstill true\n\n---\n\n' +
+    '## Gone\n\n_Added: 2026-01-01T00:00:00.000Z_\n_Source: corrections.md#gone_\n\nretired rule\n\n---\n';
+  const corrections = '# Corrections\n\n## 2026-02-01T00:00:00Z\n\n**lesson:** still true\n\n---\n';
+  const out = annotateWikiSources(wiki, corrections);
+  assert.equal(out.split(RETIRED_SOURCE_ANNOTATION).length - 1, 1, 'only the removed-source entry is flagged');
+  assert.ok(out.includes(`#gone_${RETIRED_SOURCE_ANNOTATION}\n\nretired rule`));
+  assert.equal(annotateWikiSources('# Wiki\n\n', corrections), '# Wiki\n\n');
 });
