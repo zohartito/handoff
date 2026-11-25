@@ -387,3 +387,24 @@ test("a user correction delivered as content blocks is captured", async () => {
   assert.equal(found.length, 1, "block-form correction should be detected");
   assert.match(found[0]!.userSaid, /prefer pathlib/);
 });
+
+test("HOF-22: automatic capture redacts credentials before persistence and priming", async () => {
+  const { buildPrimer } = await import("../src/commands/prime.js");
+  const root = scaffoldHandoff();
+  const marker = "synthetic-audit-value-" + "123456";
+  const transcript = join(root, "session.jsonl");
+  const command = `NPM_TOKEN='${marker}' npm run build --password=${marker}`;
+  const error = `Error Authorization: Bearer ${marker}\n{"api_key":"${marker}"}\nhttps://synthetic:${marker}@example.invalid/fail`;
+  writeFileSync(transcript, failingBashJsonl(command, error));
+  await autoCapture({ cwd: root, payload: { transcript_path: transcript, session_id: "audit-redaction" } });
+  const paths = resolveHandoffPaths(root);
+  const saved = readFileSync(paths.attempts, "utf8");
+  assert.ok(!saved.includes(marker), "no synthetic credential may persist");
+  assert.match(saved, /\[REDACTED\]/);
+  assert.match(saved, /npm run build/);
+  const primer = await buildPrimer(paths, "generic", Infinity);
+  assert.ok(!primer.includes(marker), "primers must not disclose captured credentials");
+  // Explicit manual logging remains verbatim, not an implicit raw hook capture.
+  await attempt({ cwd: root, what: "manual diagnostic", error: "literal diagnostic", quiet: true });
+  assert.match(readFileSync(paths.attempts, "utf8"), /literal diagnostic/);
+});

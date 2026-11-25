@@ -1,6 +1,8 @@
+import { randomUUID } from "node:crypto";
+import { withFileLock } from "../util/lock.js";
 import { basename, resolve } from "node:path";
 import { resolveHandoffPaths } from "../format/paths.js";
-import { exists, readOrEmpty, writeFileSafe, ensureDir } from "../util/fs.js";
+import { exists, readOrEmpty, writeFileSafe, ensureDir, readJson, writeJson } from "../util/fs.js";
 import { splitEntries } from "./prime.js";
 
 export interface ObsidianOpts {
@@ -82,12 +84,34 @@ export async function obsidian(opts: ObsidianOpts = {}): Promise<ObsidianCounts>
     dailyWritten = 1;
   }
 
+  // Persist identities separately from mutable prose and sync dates. Timestamp
+  // occurrence distinguishes even entries logged in the same millisecond.
+  type NoteId = { id: string; date: string };
+  type Index = { project: string; notes: Record<string, NoteId> };
+  const indexPath = resolve(paths.dir, "obsidian-ids.json");
+  const ids = await withFileLock(indexPath, async () => {
+    const index = await readJson<Index>(indexPath) ?? { project: randomUUID(), notes: {} };
+    const identify = (entries: string[], kind: string) => {
+      const seen = new Map<string, number>();
+      return entries.map((entry) => {
+        const heading = entry.match(/^## (.+)$/m)?.[1] ?? "seed";
+        const occurrence = (seen.get(heading) ?? 0) + 1;
+        seen.set(heading, occurrence);
+        const key = JSON.stringify([kind, heading, occurrence]);
+        return index.notes[key] ??= { id: randomUUID(), date: heading.match(/^\d{4}-\d{2}-\d{2}/)?.[0] ?? date };
+      });
+    };
+    const result = { project: index.project, decisions: identify(decisions, "decision"), corrections: identify(corrections, "correction") };
+    await writeJson(indexPath, index);
+    return result;
+  });
+
   // 2. Decisions → one file per entry.
   let decisionsWritten = 0;
-  for (const entry of decisions) {
-    const decSlug = slugifyEntry(entry);
-    const file = resolve(decisionsDir, `${date}_${slug}_${decSlug}.md`);
-    const body = renderDecisionNote({ projectPath, slug, date, entry });
+  for (const [i, entry] of decisions.entries()) {
+    const identity = ids.decisions[i];
+    const file = resolve(decisionsDir, `${identity.date}_${slug}_${ids.project}_${identity.id}.md`);
+    const body = renderDecisionNote({ projectPath, slug, date: identity.date, entry });
     const wrote = await writeIfChanged(file, body);
     if (wrote) decisionsWritten += 1;
     else skipped += 1;
@@ -95,9 +119,8 @@ export async function obsidian(opts: ObsidianOpts = {}): Promise<ObsidianCounts>
 
   // 3. Corrections → Rules, one file per entry.
   let correctionsWritten = 0;
-  for (const entry of corrections) {
-    const corrSlug = slugifyEntry(entry);
-    const file = resolve(rulesDir, `${slug}__${corrSlug}.md`);
+  for (const [i, entry] of corrections.entries()) {
+    const file = resolve(rulesDir, `${slug}__${ids.project}_${ids.corrections[i].id}.md`);
     const body = renderRuleNote({ projectPath, slug, entry });
     const wrote = await writeIfChanged(file, body);
     if (wrote) correctionsWritten += 1;

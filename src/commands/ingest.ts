@@ -124,7 +124,7 @@ async function ingestClaudeCode(opts: IngestOpts, project: string): Promise<void
     const summaries = await listSessionsAcross(projectDirs);
     const ids = summaries.slice(0, 5).map((s) => s.id.slice(0, 8)).join(", ");
     console.error(
-      `session not found: ${sessionId}\n` +
+      `session not found in project scope: ${sessionId}\n` +
         `  searched: ${projectDirs.join(", ")}\n` +
         (ids ? `  available (most recent): ${ids}` : `  no sessions in any dir`),
     );
@@ -252,7 +252,7 @@ export async function emitOutput(
  * Claude Code normalizes project paths into folder names under
  * ~/.claude/projects/, by replacing `:`, `\`, `/`, and `_` all with `-`.
  *
- *   C:\Users\zohar_4ta16fp\handoff  →  C--Users-zohar-4ta16fp-handoff
+ *   C:\Users\sample_user\handoff  →  C--Users-sample-user-handoff
  */
 function encodeProjectPath(projectPath: string): string {
   return projectPath.replace(/[:\\/_]/g, "-");
@@ -418,11 +418,11 @@ async function resolveSessionFileAcross(
 ): Promise<string | null> {
   if (sessionId === "latest") {
     const sessions = await listSessionsAcross(projectDirs);
-    // Prefer sessions whose logged cwd actually matches the requested project.
-    // Without this filter, a parent-dir session (newer but wrong scope) wins.
+    // Automatic selection is project-scoped; cross-project imports require
+    // an explicit session id, even when only parent-directory logs exist.
     if (projectPath) {
       const scoped = sessions.filter((s) => cwdMatchesProject(s.cwd, projectPath));
-      if (scoped.length > 0) return scoped[0].file;
+      return scoped[0]?.file ?? null;
     }
     return sessions[0]?.file ?? null;
   }

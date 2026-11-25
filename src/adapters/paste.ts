@@ -3,7 +3,8 @@ import { spawn } from "node:child_process";
 import { platform } from "node:os";
 import { join } from "node:path";
 import { resolveHandoffPaths } from "../format/paths.js";
-import { writeFileSafe } from "../util/fs.js";
+import { readOrEmpty, writeFileSafe } from "../util/fs.js";
+import { withFileLock } from "../util/lock.js";
 import {
   renderMarkdown,
   emitOutput,
@@ -18,7 +19,7 @@ import {
  * no log file on disk — users have to paste transcripts by hand. This adapter
  * accepts that raw paste from a file, stdin, or the system clipboard and:
  *
- *   1. Writes the verbatim text to `.handoff/transcript.md` (NEW file — not
+ *   1. Appends the verbatim text to `.handoff/transcript.md` (NEW file — not
  *      jsonl, since pasted chat is not structured)
  *   2. Produces a markdown summary via the shared `renderMarkdown()` so the
  *      output shape matches every other source adapter
@@ -82,7 +83,11 @@ export async function ingestPaste(opts: PasteIngestOpts): Promise<void> {
   const paths = resolveHandoffPaths(opts.project);
   const transcriptMd = join(paths.dir, "transcript.md");
   const payload = text.endsWith("\n") ? text : text + "\n";
-  await writeFileSafe(transcriptMd, payload);
+  await withFileLock(transcriptMd, async () => {
+    const existing = await readOrEmpty(transcriptMd);
+    const separator = existing ? `\n\n---\n## Session ${new Date().toISOString()}\n\n` : "";
+    await writeFileSafe(transcriptMd, existing + separator + payload);
+  });
 
   // 2. Render summary with the shared section layout
   const output = renderPasteSummary({ text, source: sourceDescriptor });
@@ -100,11 +105,7 @@ export async function buildPasteSummary(opts: {
   const paths = resolveHandoffPaths(opts.project);
   const transcriptMd = join(paths.dir, "transcript.md");
   let text: string;
-  try {
-    text = await fs.readFile(transcriptMd, "utf8");
-  } catch {
-    return null;
-  }
+  text = await readOrEmpty(transcriptMd);
   if (text.trim().length === 0) return null;
   return renderPasteSummary({ text, source: transcriptMd });
 }

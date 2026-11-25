@@ -394,3 +394,19 @@ test("buildPasteSummary returns a rendered summary when transcript.md has conten
     proj.cleanup();
   }
 });
+
+test("HOF-05: paste appends without losing captured sessions", async () => {
+  const proj = makeProject("append");
+  const { capture } = await import("../src/commands/capture.js");
+  const { Readable } = await import("node:stream");
+  await capture({ cwd: proj.dir, source: { kind: "stdin" }, mode: "summary",
+    stdin: Readable.from(["CAPTURE_HISTORY_MARKER\n"]) });
+  const transcript = join(proj.handoffDir, "transcript.md");
+  const before = readFileSync(transcript, "utf8");
+  await Promise.all([1, 2].map((i) => ingestPaste({
+    project: proj.dir, file: FIXTURE, out: join(proj.dir, `summary-${i}.md`),
+  })));
+  const after = readFileSync(transcript, "utf8");
+  assert.ok(after.startsWith(before), "captured bytes must survive paste ingestion");
+  assert.equal(after.split(readFileSync(FIXTURE, "utf8").trim()).length - 1, 2);
+});
