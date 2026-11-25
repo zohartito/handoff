@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
   SCHED nightly retrieval-eval regression loop for handoff.
-  NOT loaded automatically. To enable on this Mac:
+  NOT loaded automatically. Before enabling, replace /ABSOLUTE/PATH/TO/handoff
+  below with your checkout path (XML-escape characters such as &amp;). Then:
 
     cp scripts/launchd/com.zohartito.handoff.retrieval-eval.plist \
        ~/Library/LaunchAgents/
@@ -22,7 +23,7 @@
     <array>
       <string>/bin/zsh</string>
       <string>-lc</string>
-      <string>cd /Users/zohartito/projects/handoff &amp;&amp; node scripts/retrieval-eval.mjs</string>
+      <string>cd &quot;/ABSOLUTE/PATH/TO/handoff&quot; &amp;&amp; node scripts/retrieval-eval.mjs</string>
     </array>
     <key>StartCalendarInterval</key>
     <dict>

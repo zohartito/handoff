@@ -15,6 +15,29 @@ function mkCorrection(ts: string, action: string, userSaid: string, auto = false
   return `\n## ${ts}\n\n${src}**agent did:** ${action}\n\n**user said:** ${userSaid}\n\n---\n`;
 }
 
+test("HOF-06: splitEntries keeps fenced headings inside their owning entry", () => {
+  const first = "## first\n\n**superseded:** true\n\n```markdown\n## revoked example\n---\n```";
+  const second = "## second\n\nactive fact";
+  for (const newline of ["\n", "\r\n"]) {
+    const raw = `# Decisions\n\n${first}\n\n---\n\n${second}\n\n---\n`.replace(/\n/g, newline);
+    assert.deepEqual(splitEntries(raw), [first, second].map((entry) => entry.replace(/\n/g, newline)));
+  }
+});
+
+test("HOF-06: splitEntries closes only matching fences of sufficient length", () => {
+  for (const fence of ["````", "~~~~"]) {
+    const other = fence[0] === "`" ? "~~~" : "```";
+    const first = `## first\n\n   ${fence}markdown\n${fence.slice(1)}\n## after short marker\n${other}\n## after other marker\n${fence}text\n## after labelled marker\n   ${fence}${fence[0]}\ntrailing body`;
+    const second = "## second\n\nactive fact";
+    assert.deepEqual(splitEntries(`${first}\n\n---\n\n${second}\n\n---\n`), [first, second]);
+  }
+});
+
+test("HOF-06: headerless logs ignore fenced headings and dividers", () => {
+  const first = "first fact\n\n```markdown\n## example heading\n---\nexample body\n```";
+  assert.deepEqual(splitEntries(`# Decisions\n\n${first}\n\n---\n\nsecond fact\n`), [first, "second fact"]);
+});
+
 /**
  * Genuinely distinct one-off corrections. They must not share vocabulary with
  * each other — three entries that all say the same thing ARE a theme, and the

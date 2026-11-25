@@ -1,17 +1,14 @@
 import { spawn } from "node:child_process";
 import { platform } from "node:os";
 import { resolveHandoffPaths } from "../format/paths.js";
-import { exists, readOrEmpty, writeJson } from "../util/fs.js";
+import { exists, writeJson } from "../util/fs.js";
 import {
   buildPrimer,
-  buildCompactPrimer,
+  buildCheckedPrimer,
+  PrimerBudgetError,
   detectHandoffTaxDirection,
   type Tool,
 } from "./prime.js";
-import {
-  extractConstraints,
-  verifyConstraintsPreserved,
-} from "../format/constraints.js";
 import { loadMeta } from "../format/migrate.js";
 import { save } from "./save.js";
 
@@ -97,9 +94,11 @@ export async function switchTool(opts: SwitchOpts): Promise<void> {
   //    target the compact primer cannot be delivered through the hook, so we do
   //    not claim it was; --compact for claude-code is surfaced as a no-op below.
   const autoInjected = opts.tool === "claude-code";
+  let copied = false;
   if (!autoInjected) {
-    const copied = await writeClipboard(primer);
+    copied = await writeClipboard(primer);
     if (!copied) {
+      process.exitCode = 1;
       const compactFlag = primerMode === "compact" ? " --compact" : "";
       process.stderr.write(
         "⚠  couldn't copy to clipboard automatically.\n" +
@@ -127,16 +126,18 @@ export async function switchTool(opts: SwitchOpts): Promise<void> {
   // manually and pastes from clipboard.
   const canLaunch = opts.tool !== "claude-desktop";
   const effectiveNoLaunch = opts.noLaunch === true || !canLaunch;
+  let launched = false;
   if (!effectiveNoLaunch) {
-    const launched = await launchTool(opts.tool, cwd);
+    launched = await launchTool(opts.tool, cwd);
     if (!launched) {
+      process.exitCode = 1;
       // Two common causes: the binary isn't on PATH, or it's a terminal UI that
-      // won't run detached without a TTY. Either way the primer is already on
-      // the clipboard, so opening the tool by hand loses nothing.
+      // will not run detached without a TTY. Report copy status separately.
       process.stderr.write(
         `⚠  couldn't launch ${opts.tool} automatically.\n` +
           `   check it's on PATH — terminal tools may also need to be opened in your own shell.\n` +
-          `   the primer is already on your clipboard: open ${opts.tool} and paste.\n`,
+          (copied ? `   the primer is already on your clipboard: open ${opts.tool} and paste.\n` :
+            `   open ${opts.tool} manually; retrieve context with handoff prime --tool ${opts.tool}.\n`),
       );
     }
   }
@@ -148,6 +149,8 @@ export async function switchTool(opts: SwitchOpts): Promise<void> {
     requestedCompact: opts.compact === true,
     constraintFallback,
     length: primer.length,
+    copied,
+    launched,
   });
 }
 
@@ -174,11 +177,11 @@ export async function selectPrimer(
     };
   }
 
-  const compact = await buildCompactPrimer(paths, tool);
-  const constraints = extractConstraints(await readOrEmpty(paths.corrections));
-  const { ok } = verifyConstraintsPreserved(compact, constraints);
-  if (ok) {
+  try {
+    const compact = await buildCheckedPrimer(paths, tool, { mode: "compact" });
     return { primer: compact, mode: "compact", constraintFallback: false };
+  } catch (err) {
+    if (!(err instanceof PrimerBudgetError)) throw err;
   }
 
   // Compaction would have shed a user guardrail. Opt-in or not, we do not hand
@@ -351,6 +354,8 @@ function printSummary(
     requestedCompact: boolean;
     constraintFallback: boolean;
     length: number;
+    copied: boolean;
+    launched: boolean;
   },
 ): void {
   const clip = clipCommandName();
@@ -367,6 +372,8 @@ function printSummary(
       );
       lines.push(`      For a compact context: handoff prime --tool ${tool} --compact`);
     }
+  } else if (!primer.copied) {
+    lines.push(`   ⚠ primer was not copied; run handoff prime --tool ${tool} to retrieve it.`);
   } else if (primer.mode === "compact") {
     lines.push(
       `   ✓ compact primer copied to clipboard (${primer.length} chars — prior trajectory stripped)`,
@@ -385,7 +392,7 @@ function printSummary(
     lines.push(`      so the full primer was used to preserve it.`);
   }
 
-  if (!noLaunch) {
+  if (!noLaunch && primer.launched) {
     lines.push(`   ✓ launching ${tool}...`);
   }
 
@@ -405,7 +412,7 @@ function printSummary(
     }
   }
 
-  if (!autoInjected) {
+  if (!autoInjected && primer.copied) {
     lines.push("");
     if (tool === "claude-desktop") {
       lines.push(`   open Claude Desktop manually, start a new conversation in the`);

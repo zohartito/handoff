@@ -50,7 +50,7 @@ when stdout is redirected (> file) or piped further, output is 0 bytes — proce
 **error:**
 
 ```
-fresh CC session in handoff/ created C--Users-zohar-4ta16fp-handoff; ingest's findClaudeProjectDir returned early, never looked at the parent C--Users-zohar-4ta16fp where the build history lived. Fresh agent ingested itself.
+fresh CC session in handoff/ created C--Users-sample-user-handoff; ingest's findClaudeProjectDir returned early, never looked at the parent C--Users-sample-user where the build history lived. Fresh agent ingested itself.
 ```
 
 **fix:** walk up the path AND aggregate across every existing project dir; resolveSessionFileAcross / listSessionsAcross iterate over them

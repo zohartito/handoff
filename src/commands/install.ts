@@ -1,3 +1,5 @@
+import { managedHookSettings } from "./managed-hooks.js";
+
 type Tool = "claude-code" | "claude-desktop" | "cursor";
 
 type InstallOpts = { tool: Tool };
@@ -35,54 +37,7 @@ Four hooks:
   reminds you to swap tools
 
 ${"```"}json
-{
-  "hooks": {
-    "SessionStart": [
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "handoff hook session-start"
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "handoff hook stop"
-          }
-        ]
-      }
-    ],
-    "PreCompact": [
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "handoff hook pre-compact"
-          }
-        ]
-      }
-    ],
-    "StopFailure": [
-      {
-        "matcher": "rate_limit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "handoff hook rate-limit"
-          }
-        ]
-      }
-    ]
-  }
-}
+${JSON.stringify(managedHookSettings(), null, 2)}
 ${"```"}
 
 The Stop and PreCompact hooks read Claude Code's JSON payload on stdin

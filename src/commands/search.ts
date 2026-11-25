@@ -1,4 +1,4 @@
-import { promises as fs } from "node:fs";
+import { readOrEmpty } from "../util/fs.js";
 import { join } from "node:path";
 import {
   discoverHandoffProjects,
@@ -59,7 +59,7 @@ async function scanFile(
 ): Promise<SearchMatch[]> {
   let contents: string;
   try {
-    contents = await fs.readFile(filePath, "utf8");
+    contents = await readOrEmpty(filePath);
   } catch {
     return [];
   }

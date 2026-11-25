@@ -1,7 +1,7 @@
 import { resolveHandoffPaths } from "../format/paths.js";
 import { exists, readOrEmpty, writeFileSafe } from "../util/fs.js";
 import { withFileLock } from "../util/lock.js";
-import { hashEntry } from "../util/capture-state.js";
+import { createHash } from "node:crypto";
 
 /**
  * `handoff compact` — the append → compact → archive lifecycle for the
@@ -38,14 +38,14 @@ export type CompactTarget = (typeof TARGET_KEYS)[number];
 const DEFAULT_KEEP = 20;
 
 const TS_HEADING = /^##\s+(\d{4}-\d{2}-\d{2}T[0-9:.]+Z)\s*$/;
-const ARCHIVE_HEADING = /^##\s+Archive\b/i;
+const ARCHIVE_HEADING = /^## Archive \(compacted \d{4}-\d{2}-\d{2}\)\r?$/;
 const ARCHIVE_COMMENT = /^<!--\s*Older entries relocated/i;
 const SEEN_LINE = /^\*\*seen:\*\*/i;
 
 export type LogEntry = {
   /** Verbatim body (heading, separators and provenance line stripped). */
   body: string;
-  /** Identity hash of the normalized body — matches auto-capture's scheme. */
+  /** Identity hash of the exact body bytes. */
   hash: string;
   /** How many original append events this entry now represents. */
   count: number;
@@ -95,8 +95,8 @@ export function isCompactTarget(s: string): s is CompactTarget {
  * previously-written archive scaffolding is dropped here so a re-compaction
  * treats live and archived entries uniformly (idempotence).
  */
-export function parseLog(content: string): { preamble: string; entries: LogEntry[] } {
-  const lines = content.split(/\r?\n/);
+export function parseLog(content: string): { preamble: string; entries: LogEntry[]; archiveHeading?: string } {
+  const lines = content.split("\n");
   const firstIdx = lines.findIndex((l) => TS_HEADING.test(l));
   if (firstIdx === -1) {
     return { preamble: content.replace(/\s+$/, ""), entries: [] };
@@ -105,6 +105,8 @@ export function parseLog(content: string): { preamble: string; entries: LogEntry
   const preamble = lines.slice(0, firstIdx).join("\n").replace(/\s+$/, "");
   const entries: LogEntry[] = [];
 
+  let archiveHeading: string | undefined;
+  let fence: { char: string; length: number } | null = null;
   let headingTs: string | null = null;
   let bodyLines: string[] = [];
 
@@ -114,13 +116,15 @@ export function parseLog(content: string): { preamble: string; entries: LogEntry
     const trimmed = [...bodyLines];
     while (
       trimmed.length &&
-      (trimmed[trimmed.length - 1].trim() === "" || trimmed[trimmed.length - 1].trim() === "---")
+      (/^(?:---)?\r?$/.test(trimmed[trimmed.length - 1]))
     ) {
       trimmed.pop();
     }
-    const seenLine = trimmed.find((l) => SEEN_LINE.test(l.trim()));
-    const kept = trimmed.filter((l) => !SEEN_LINE.test(l.trim()));
-    const body = kept.join("\n").replace(/^\n+|\n+$/g, "");
+    // Provenance is metadata only at the start of an entry, never in its trace.
+    const first = trimmed.findIndex((l) => !/^\r?$/.test(l));
+    const seenLine = first >= 0 && SEEN_LINE.test(trimmed[first]) ? trimmed[first] : undefined;
+    if (seenLine) trimmed.splice(first, 1);
+    const body = trimmed.join("\n").replace(/^(?:\r?\n)+|(?:\r?\n)+$/g, "");
 
     let count = 1;
     let lastTs = headingTs;
@@ -133,7 +137,7 @@ export function parseLog(content: string): { preamble: string; entries: LogEntry
 
     entries.push({
       body,
-      hash: hashEntry("compact", [body]),
+      hash: createHash("sha256").update(body).digest("hex"),
       count,
       firstTs: headingTs,
       lastTs,
@@ -141,6 +145,17 @@ export function parseLog(content: string): { preamble: string; entries: LogEntry
   };
 
   for (const line of lines.slice(firstIdx)) {
+    const marker = line.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
+    if (fence) {
+      bodyLines.push(line);
+      if (marker && marker[1][0] === fence.char && marker[1].length >= fence.length && !marker[2].trim()) fence = null;
+      continue;
+    }
+    if (marker && headingTs !== null) {
+      fence = { char: marker[1][0], length: marker[1].length };
+      bodyLines.push(line);
+      continue;
+    }
     const ts = line.match(TS_HEADING);
     if (ts) {
       flush();
@@ -150,16 +165,19 @@ export function parseLog(content: string): { preamble: string; entries: LogEntry
     }
     // Regenerated scaffolding: never fold it into an entry body.
     if (ARCHIVE_HEADING.test(line) || ARCHIVE_COMMENT.test(line)) {
+      if (ARCHIVE_HEADING.test(line)) archiveHeading = line;
       flush();
       headingTs = null;
       bodyLines = [];
       continue;
     }
     if (headingTs !== null) bodyLines.push(line);
+    else if (line.trim()) throw new Error("unrecognized text outside an entry; refusing compaction");
   }
+  if (fence) throw new Error("unclosed code fence; refusing compaction");
   flush();
 
-  return { preamble, entries };
+  return { preamble, entries, archiveHeading };
 }
 
 /** Merge byte-identical entries (by body hash), preserving order + provenance. */
@@ -195,7 +213,7 @@ export function compactLog(
   opts: { keep?: number; now?: Date } = {},
 ): { output: string; stats: Omit<CompactFileResult, "target" | "skipped" | "changed"> } {
   const keep = opts.keep ?? DEFAULT_KEEP;
-  const { preamble, entries } = parseLog(content);
+  const { preamble, entries, archiveHeading } = parseLog(content);
 
   const inputEvents = entries.reduce((n, e) => n + e.count, 0);
   const distinctEntries = dedupe(entries);
@@ -231,13 +249,23 @@ export function compactLog(
   if (archived.length > 0) {
     const date = (opts.now ?? new Date()).toISOString().slice(0, 10);
     parts.push(
-      `\n## Archive (compacted ${date})\n\n` +
+      `\n${archiveHeading ?? `## Archive (compacted ${date})`}\n\n` +
         `<!-- Older entries relocated here by \`handoff compact\`. Verbatim and ` +
         `provenance-preserving; read the live entries above first. -->\n`,
     );
     for (const e of archived) parts.push("\n" + renderEntry(e));
   }
-  const output = parts.join("\n").replace(/\n{3,}/g, "\n\n").replace(/\s*$/, "") + "\n";
+  const output = parts.join("\n").replace(/\n*$/, "") + "\n";
+  // Validate the rendered bytes too, rather than only the in-memory dedupe.
+  const rendered = parseLog(output).entries;
+  for (const e of entries) {
+    if (!output.includes(e.body) || !rendered.some((r) => r.body === e.body)) {
+      throw new Error("compaction would change an original entry body");
+    }
+  }
+  if (rendered.reduce((n, e) => n + e.count, 0) !== inputEvents) {
+    throw new Error("rendered compaction lost events");
+  }
 
   return {
     output,
@@ -266,58 +294,60 @@ export async function compact(opts: CompactOpts = {}): Promise<CompactFileResult
 
   for (const target of targets) {
     const path = paths[target];
-    const before = await readOrEmpty(path);
-    const parsed = parseLog(before);
+    await withFileLock(path, async () => {
+      const before = await readOrEmpty(path);
+      const parsed = parseLog(before);
 
-    if (parsed.entries.length === 0) {
-      results.push({
-        target,
-        skipped: true,
-        inputEvents: 0,
-        distinct: 0,
-        merged: 0,
-        archived: 0,
-        changed: false,
-      });
-      if (!quiet) console.log(`${target}.md: no timestamped entries — skipped`);
-      continue;
-    }
-
-    let output: string;
-    let stats: Omit<CompactFileResult, "target" | "skipped" | "changed">;
-    try {
-      const r = compactLog(before, { keep: opts.keep, now: opts.now });
-      output = r.output;
-      stats = r.stats;
-    } catch (err) {
-      process.exitCode = 1;
-      if (!quiet) {
-        console.error(
-          `${target}.md: compaction aborted (file untouched) — ${
-            err instanceof Error ? err.message : String(err)
-          }`,
-        );
+      if (parsed.entries.length === 0) {
+        results.push({
+          target,
+          skipped: true,
+          inputEvents: 0,
+          distinct: 0,
+          merged: 0,
+          archived: 0,
+          changed: false,
+        });
+        if (!quiet) console.log(`${target}.md: no timestamped entries — skipped`);
+        return;
       }
-      continue;
-    }
 
-    const changed = output !== before;
-    if (changed && !opts.dryRun) {
-      await withFileLock(path, () => writeFileSafe(path, output));
-    }
+      let output: string;
+      let stats: Omit<CompactFileResult, "target" | "skipped" | "changed">;
+      try {
+        const r = compactLog(before, { keep: opts.keep, now: opts.now });
+        output = r.output;
+        stats = r.stats;
+      } catch (err) {
+        process.exitCode = 1;
+        if (!quiet) {
+          console.error(
+            `${target}.md: compaction aborted (file untouched) — ${
+              err instanceof Error ? err.message : String(err)
+            }`,
+          );
+        }
+        return;
+      }
 
-    results.push({ target, skipped: false, changed, ...stats });
+      const changed = output !== before;
+      if (changed && !opts.dryRun) {
+        await writeFileSafe(path, output);
+      }
 
-    if (!quiet) {
-      const verb = opts.dryRun ? "would" : changed ? "compacted" : "unchanged";
-      const bits = [
-        `${stats.inputEvents} event${stats.inputEvents === 1 ? "" : "s"}`,
-        `${stats.distinct} distinct`,
-      ];
-      if (stats.merged > 0) bits.push(`${stats.merged} dup${stats.merged === 1 ? "" : "s"} merged`);
-      if (stats.archived > 0) bits.push(`${stats.archived} archived`);
-      console.log(`${target}.md: ${verb} — ${bits.join(", ")}`);
-    }
+      results.push({ target, skipped: false, changed, ...stats });
+
+      if (!quiet) {
+        const verb = opts.dryRun ? "would" : changed ? "compacted" : "unchanged";
+        const bits = [
+          `${stats.inputEvents} event${stats.inputEvents === 1 ? "" : "s"}`,
+          `${stats.distinct} distinct`,
+        ];
+        if (stats.merged > 0) bits.push(`${stats.merged} dup${stats.merged === 1 ? "" : "s"} merged`);
+        if (stats.archived > 0) bits.push(`${stats.archived} archived`);
+        console.log(`${target}.md: ${verb} — ${bits.join(", ")}`);
+      }
+    });
   }
 
   return results;

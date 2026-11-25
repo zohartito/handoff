@@ -1,6 +1,22 @@
+import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { switchTool, spawnDetached } from "../src/commands/switch.js";
+import { mkdtempSync as makeTempDir, writeFileSync as writeFile } from "node:fs";
+import { tmpdir as systemTmp } from "node:os";
+import { delimiter, join as joinPath } from "node:path";
+
+// Every in-process switch here copies a primer. Give this test process a clipboard that accepts it,
+// so results do not depend on the host (Linux CI has no clipboard tool, and a failed copy sets
+// exitCode 1) and no test touches the developer's real clipboard. Windows keeps clip.exe.
+// Each test file runs in its own process; tests that need a missing clipboard pass their own PATH.
+if (process.platform !== "win32") {
+  const fakeClipboard = makeTempDir(joinPath(systemTmp(), "handoff-fake-clip-"));
+  for (const name of ["pbcopy", "wl-copy"]) {
+    writeFile(joinPath(fakeClipboard, name), "#!/bin/sh\ncat >/dev/null\n", { mode: 0o755 });
+  }
+  process.env.PATH = fakeClipboard + delimiter + (process.env.PATH ?? "");
+}
 
 test("switchTool rejects an unknown tool with exitCode 1 before any side effects", async () => {
   const prevExit = process.exitCode;
@@ -205,4 +221,19 @@ test("switch --compact to claude-code is a surfaced no-op (hook injects full)", 
     assert.match(out, /full primer will auto-inject via Claude Code/);
     assert.match(out, /--compact does not apply to Claude Code/);
   }
+});
+
+test("HOF-12 HOF-N3: failed copy and launch never claim success", async () => {
+  const { spawnSync } = await import("node:child_process");
+  const root = scaffold("codex").root;
+  const bin = join(root, "empty-path");
+  mkdirSync(bin);
+  const cli = fileURLToPath(new URL("../src/cli.js", import.meta.url));
+  const result = spawnSync(process.execPath, [cli, "switch", "cursor", "--no-save"], {
+    cwd: root, encoding: "utf8", env: { ...process.env, PATH: bin, HOME: root },
+  });
+  assert.match(result.stderr, /couldn't copy/);
+  assert.match(result.stderr, /couldn't launch/);
+  assert.doesNotMatch(result.stderr, /✓.*copied|✓.*launching|already on your clipboard/);
+  assert.equal(result.status, 1, "requested operations failed");
 });
