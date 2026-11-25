@@ -3,6 +3,7 @@ import { resolveHandoffPaths } from "../format/paths.js";
 import { appendLine, exists } from "../util/fs.js";
 import { withFileLock } from "../util/lock.js";
 import { hashEntry, registerSeenHash } from "../util/capture-state.js";
+import { captureEvidence } from "./evidence.js";
 
 type AttemptOpts = {
   what: string;
@@ -14,6 +15,8 @@ type AttemptOpts = {
   source?: "auto" | "manual";
   /** Suppress the success console.log (used by the Stop-hook auto path). */
   quiet?: boolean;
+  /** Files the failure depends on, hashed so a later edit flags the entry stale. */
+  evidence?: string[];
 };
 
 export async function attempt(opts: AttemptOpts): Promise<void> {
@@ -35,12 +38,14 @@ export async function attempt(opts: AttemptOpts): Promise<void> {
       summary: opts.summary ? redactSecrets(opts.summary) : undefined,
     };
   }
+  const evidence = await captureEvidence(paths.root, opts.evidence);
   const ts = new Date().toISOString();
   const entry = [
     `## ${ts}`,
     ``,
     isAuto ? `**source:** auto\n` : null,
     `**tried:** ${opts.what}`,
+    ...evidence,
     opts.error ? `\n**error:**\n\n\`\`\`\n${opts.error.trim()}\n\`\`\`` : null,
     opts.fix ? `\n**fix:** ${opts.fix}` : null,
     opts.summary ? `\n**summary:** ${opts.summary}` : null,

@@ -95,12 +95,14 @@ program
   .option("--error <trace>", "verbatim error output")
   .option("--fix <desc>", "what ended up working")
   .option("--summary <text>", "agent-written summary (don't replace the trace)")
+  .option("--evidence <paths...>", "hash evidence files relative to the repository root")
   .action(async (what, opts) => {
     await attempt({
       what,
       error: opts.error,
       fix: opts.fix,
       summary: opts.summary,
+      evidence: opts.evidence,
     });
   });
 
@@ -146,7 +148,7 @@ program
 
 program
   .command("stale")
-  .description("check evidence for active decisions and corrections")
+  .description("check evidence for active decisions, corrections and attempts")
   .option("--check", "exit 1 if evidence changed or disappeared")
   .option("--json", "emit evidence status as JSON")
   .action(async (opts) => {

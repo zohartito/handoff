@@ -65,7 +65,7 @@ All `.handoff/` reads and writes use the guarded helpers in `src/util/fs.ts`.
 Reject state symlinks (including parent directories); replacements are atomic.
 
 ## Evidence freshness
-`decide` and `correct` accept `--evidence <paths...>` (MCP: `evidence: string[]`).
+`decide`, `correct` and `attempt` accept `--evidence <paths...>` (MCP: `evidence: string[]`).
 `src/commands/evidence.ts` hashes repo-contained files and checks recorded hashes;
 `handoff stale --check` exits 1 for changed, missing or unreadable evidence on active entries;
 an unreadable file flags its entry and never aborts a primer.

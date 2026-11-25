@@ -191,6 +191,11 @@ export const TOOLS: ToolDef[] = [
           type: "string",
           description: "Optional: what ended up working instead.",
         },
+        evidence: {
+          type: "array",
+          items: { type: "string" },
+          description: "Optional: evidence files relative to the repository root, hashed when logged. Must exist and stay inside the repository.",
+        },
       },
       required: ["what"],
       additionalProperties: false,
@@ -202,6 +207,7 @@ export const TOOLS: ToolDef[] = [
         what: String(args.what),
         error: args.error === undefined ? undefined : String(args.error),
         fix: args.fix === undefined ? undefined : String(args.fix),
+        evidence: evidencePaths(args.evidence),
         cwd: ctx.projectRoot,
         quiet: true,
       });

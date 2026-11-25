@@ -12,7 +12,7 @@ export type StaleEntry = {
 
 export async function collectEvidenceStatus(paths: HandoffPaths): Promise<StaleEntry[]> {
   const results: StaleEntry[] = [];
-  for (const file of ["decisions", "corrections"] as const) {
+  for (const file of ["decisions", "corrections", "attempts"] as const) {
     const raw = await readOrEmpty(paths[file]);
     for (const entry of splitEntries(raw).filter((e) => !isSuperseded(e))) {
       const evidence = await checkEvidence(paths.root, entry);
