@@ -1,5 +1,6 @@
 import { resolveHandoffPaths } from "../format/paths.js";
 import { templates, initialMeta, initialFilesManifest } from "../format/templates.js";
+import { save } from "./save.js";
 import {
   exists,
   ensureDir,
@@ -36,6 +37,9 @@ export async function init(opts: InitOpts = {}): Promise<void> {
   // nothing, wasting a tool call. files.json stays an unmaintained placeholder.
 
   console.log(`initialized .handoff/ at ${paths.dir}`);
+  // Capture real git/runtime facts now so the very first prime carries project
+  // context instead of an empty environment scaffold. Reuses save() verbatim.
+  await save({ cwd });
   console.log("source tool:", opts.from ?? "unknown");
   console.log("\nnext:");
   console.log("  1. fill in .handoff/task.md (what are we building)");

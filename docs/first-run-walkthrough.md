@@ -153,9 +153,14 @@ Actual full-suite result (351 existing tests plus the regression):
 
 ## Next two frictions
 
-1. **No project context on first prime.** Consider invoking the existing `save()`
-   from `init` so git and runtime facts reach environment.md immediately. Measure
-   actual fact lines afterward; do not claim that a snapshot invents task intent.
+1. **No project context on first prime.** Addressed: `init` now calls the existing
+   `save()` after writing templates/meta, so git and runtime facts reach
+   environment.md immediately (the refusal on an existing `.handoff/` is unchanged).
+   Measured with this walkthrough on November 25, 2026: project-fact lines in the
+   documented primer went **0 → 3** (cwd, `?? .handoff/` status, commit subject)
+   and the printed hint still exits 0. The walkthrough now exits 1 if the first
+   prime lacks the cwd, `main` branch, commit subject or `.handoff/` status, or
+   has fewer than three fact lines. The snapshot does not invent task intent.
 2. **Template environment reported as filled.** Make `status` distinguish a
    refresh placeholder and seeded guidance from captured project/session facts.
    It already identifies eight untouched files correctly, so adding another
