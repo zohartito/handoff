@@ -166,7 +166,7 @@ Cross-platform + cross-node validation before the adapter surface kept growing.
 - [x] Live macOS validation pass — install + version, `pbcopy` clipboard cascade, launcher PATH resolution, Cursor FS layout under `~/Library/Application Support/`, Claude Code encoder under Unix roots, Obsidian sync on Synology-mounted vault
 - [x] CI matrix — `ubuntu-latest × macos-latest × windows-latest` × Node 22 + 24 via `.github/workflows/ci.yml`
 - [x] Engines bump — `"node": ">=22.5"` in `package.json`; `node:sqlite` stabilised in 22.5 so we stopped shipping the "Node 20 works except for the Cursor adapter" caveat
-- [x] `scripts/run-tests.mjs` cross-version test runner — shells into every `test/*.test.mjs`, aggregates results, returns non-zero on any failure (so CI fails fast without each suite reimplementing the wrapper)
+- [x] `scripts/run-tests.mjs` cross-version test runner — enumerates `dist-test/tests/*.test.js` after TypeScript compilation, runs them together with `node --test`, and propagates the runner exit status
 - [x] `HANDOFF_SEARCH_ROOTS` Windows path-delimiter fix — `path.delimiter` (`;` on Windows, `:` on POSIX) instead of hard-coded `:`, in both `src/commands/search.ts` and `src/commands/patterns.ts`
 
 ---

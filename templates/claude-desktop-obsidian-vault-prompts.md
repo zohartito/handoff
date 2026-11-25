@@ -6,8 +6,8 @@ Use these copy-paste blocks when **Claude Desktop** (or any paste-first agent) i
 
 | Platform | Vault root `VAULT` |
 |----------|--------------------|
-| **Windows** | `C:\Users\zohar_4ta16fp\SynologyDrive\Obsidian\Brain\` |
-| **macOS** | `/Users/zohar_4ta16fp/SynologyDrive/Obsidian/Brain/` |
+| **Windows** | `C:\Users\sample_user\SynologyDrive\Obsidian\Brain\` |
+| **macOS** | `/Users/sample_user/SynologyDrive/Obsidian/Brain/` |
 
 **Per-project folder** under the vault (one folder per code project you track in Obsidian):
 
@@ -52,18 +52,18 @@ Don't write or edit any files until I pick one.
 ```text
 Read these files in my Obsidian vault — prior session + project context:
 
-C:\Users\zohar_4ta16fp\SynologyDrive\Obsidian\Brain\AGENT_INSTRUCTIONS.md
-C:\Users\zohar_4ta16fp\SynologyDrive\Obsidian\Brain\.handoff\task.md
-C:\Users\zohar_4ta16fp\SynologyDrive\Obsidian\Brain\.handoff\progress.md
-C:\Users\zohar_4ta16fp\SynologyDrive\Obsidian\Brain\.handoff\decisions.md
-C:\Users\zohar_4ta16fp\SynologyDrive\Obsidian\Brain\.handoff\corrections.md
-C:\Users\zohar_4ta16fp\SynologyDrive\Obsidian\Brain\.handoff\ingested-context.md
-C:\Users\zohar_4ta16fp\SynologyDrive\Obsidian\Brain\Projects\My-Project\HANDOFF.md
-C:\Users\zohar_4ta16fp\SynologyDrive\Obsidian\Brain\Projects\My-Project\roadmap.md
+C:\Users\sample_user\SynologyDrive\Obsidian\Brain\AGENT_INSTRUCTIONS.md
+C:\Users\sample_user\SynologyDrive\Obsidian\Brain\.handoff\task.md
+C:\Users\sample_user\SynologyDrive\Obsidian\Brain\.handoff\progress.md
+C:\Users\sample_user\SynologyDrive\Obsidian\Brain\.handoff\decisions.md
+C:\Users\sample_user\SynologyDrive\Obsidian\Brain\.handoff\corrections.md
+C:\Users\sample_user\SynologyDrive\Obsidian\Brain\.handoff\ingested-context.md
+C:\Users\sample_user\SynologyDrive\Obsidian\Brain\Projects\My-Project\HANDOFF.md
+C:\Users\sample_user\SynologyDrive\Obsidian\Brain\Projects\My-Project\roadmap.md
 ...
 ```
 
-**macOS** — same file names; only the root path changes to `/Users/zohar_4ta16fp/...` with forward slashes.
+**macOS** — same file names; only the root path changes to `/Users/sample_user/...` with forward slashes.
 
 ---
 

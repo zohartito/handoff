@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
@@ -148,3 +149,36 @@ function scaffoldRaw(): string {
   ).join("");
   return `# Corrections\n${body}`;
 }
+
+test("HOF-09 HOF-N2: compact CLI rejects loss and a larger budget carries all rules", async () => {
+  const { spawnSync } = await import("node:child_process");
+  const paths = scaffold();
+  const rules = Array.from({ length: 25 }, (_, i) => `constraint ${i + 1}: ${"distinct guardrail ".repeat(10)}end`);
+  writeFileSync(paths.corrections, "# Corrections\n" + rules.map((rule, i) =>
+    mkCorrection(`2026-01-${String(i + 1).padStart(2, "0")}T00:00:00Z`, "action", rule)).join(""));
+  const cli = fileURLToPath(new URL("../src/cli.js", import.meta.url));
+  const small = spawnSync(process.execPath, [cli, "prime", "--compact"], { cwd: paths.root, encoding: "utf8" });
+  assert.equal(small.status, 1);
+  assert.equal(small.stdout, "", "a rejected primer must not leak into a pipe");
+  const large = spawnSync(process.execPath, [cli, "prime", "--compact", "--max-chars", "20000"], { cwd: paths.root, encoding: "utf8" });
+  assert.equal(large.status, 0, large.stderr);
+  assert.ok(rules.every((rule) => large.stdout.includes(rule)));
+  assert.ok(large.stdout.length <= 20000);
+});
+
+test("HOF-11: CLI budgets bound every renderer or reject mandatory content", async () => {
+  const { spawnSync } = await import("node:child_process");
+  const paths = scaffold();
+  const cli = fileURLToPath(new URL("../src/cli.js", import.meta.url));
+  for (const flags of [[], ["--compact"], ["--subagent"]]) {
+    for (const budget of [100, 500, 1000, 1999, 4000]) {
+      const result = spawnSync(process.execPath, [cli, "prime", ...flags, "--max-chars", String(budget)], { cwd: paths.root, encoding: "utf8" });
+      assert.ok(result.stdout.length <= budget, `${flags} emitted ${result.stdout.length} > ${budget}`);
+      if (result.status === 0) assert.ok(RULES.every((r) => result.stdout.includes(r)));
+      else {
+        assert.equal(result.stdout, "");
+        assert.match(result.stderr, /budget|constraint|fit/);
+      }
+    }
+  }
+});

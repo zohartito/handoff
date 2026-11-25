@@ -170,3 +170,49 @@ test("compact writes the deduped file; --dry-run leaves it untouched", async () 
     rmSync(root2, { recursive: true, force: true });
   }
 });
+
+test("HOF-02: compaction distinguishes case and whitespace exactly", () => {
+  const bodies = ["Config.json", "config.json", "config.json ", "config.json  "];
+  const input = HEADER + bodies.map((b, i) => entry(`2026-08-0${i + 1}T00:00:00.000Z`, b)).join("\n");
+  const result = compactLog(input);
+  assert.equal(result.stats.distinct, bodies.length);
+  assert.deepEqual(parseLog(result.output).entries.map((e) => e.body),
+    bodies.map((b) => `**tried:** ${b}`));
+});
+
+test("HOF-02: fenced archive headings and blank lines survive verbatim", () => {
+  const trace = "first\n\n\n## Archive\n## 2026-01-01T00:00:00.000Z\n**seen:** 99×\n\n\nlast";
+  const input = HEADER + entry("2026-08-01T00:00:00.000Z", "build", trace)
+    .replace("\n---\n", "\n**fix:** keep this fix\n\n---\n");
+  const result = compactLog(input);
+  assert.equal(result.stats.inputEvents, 1);
+  assert.ok(result.output.includes(trace), "entire trace is byte-identical");
+  assert.match(result.output, /\*\*fix:\*\* keep this fix/);
+});
+
+test("HOF-03: compaction reads only after acquiring the writer lock", async () => {
+  const { withFileLock } = await import("../src/util/lock.js");
+  const first = HEADER + entry("2026-08-01T00:00:00.000Z", "dup") + entry("2026-08-02T00:00:00.000Z", "dup");
+  const root = scaffold(first);
+  const path = resolveHandoffPaths(root).attempts;
+  let release!: () => void;
+  let acquired!: () => void;
+  const ready = new Promise<void>((r) => { acquired = r; });
+  const held = withFileLock(path, async () => {
+    acquired();
+    await new Promise<void>((r) => { release = r; });
+    writeFileSync(path, first + entry("2026-08-03T00:00:00.000Z", "concurrent append"));
+  });
+  await ready;
+  const pending = compact({ cwd: root, targets: ["attempts"], quiet: true });
+  await new Promise((r) => setTimeout(r, 100));
+  release();
+  await Promise.all([held, pending]);
+  assert.match(readFileSync(path, "utf8"), /concurrent append/);
+});
+
+test("HOF-28: unchanged archives are identical across dates", () => {
+  const input = HEADER + entry("2026-08-01T00:00:00.000Z", "one") + entry("2026-08-02T00:00:00.000Z", "two");
+  const once = compactLog(input, { keep: 1, now: new Date("2026-11-15") }).output;
+  assert.equal(compactLog(once, { keep: 1, now: new Date("2026-11-16") }).output, once);
+});

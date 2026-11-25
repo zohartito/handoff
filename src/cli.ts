@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { LockError } from "./util/lock.js";
 import { Command } from "commander";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -436,4 +437,10 @@ wikiCmd
     await wikiDistill({ dryRun: opts.dryRun });
   });
 
-await program.parseAsync(process.argv);
+try {
+  await program.parseAsync(process.argv);
+} catch (err) {
+  if (!(err instanceof LockError)) throw err;
+  console.error(err.message);
+  process.exitCode = 1;
+}

@@ -247,3 +247,25 @@ test("obsidian sync: empty .handoff/ produces a Daily note with zero counts and 
     fx.cleanup();
   }
 });
+
+test("HOF-04 HOF-N1: notes retain independent stable identities", async () => {
+  const corrections = Array.from({ length: 5 }, (_, i) =>
+    `## 2026-11-15T00:00:00.000Z\n\n**source:** auto\n\n**agent did:** same action\n\n**user said:** rule ${i}\n\n---\n`).join("\n");
+  const decisions = SAMPLE_DECISIONS.replace("Slug the project from its basename", "Use NodeNext TypeScript for the new obsidian command");
+  const fx = scaffoldFixture("same-name", { corrections, decisions });
+  await obsidian({ vault: fx.vault, project: fx.project });
+  const rules = readdirSync(join(fx.vault, "Rules")).sort();
+  const notes = readdirSync(join(fx.vault, "Decisions")).sort();
+  assert.equal(rules.length, 5, "auto corrections must not overwrite each other");
+  assert.equal(notes.length, 2, "identical choices are independent history");
+  writeFileSync(join(fx.project, ".handoff/corrections.md"), corrections.replace("same action", "edited action"));
+  await obsidian({ vault: fx.vault, project: fx.project });
+  assert.deepEqual(readdirSync(join(fx.vault, "Rules")).sort(), rules, "edits retain filenames");
+  assert.ok(rules.some((f) => readFileSync(join(fx.vault, "Rules", f), "utf8").includes("edited action")));
+  assert.ok(notes.every((f) => f.startsWith("2026-04-16_")), "decision date comes from the entry, not sync day");
+  const other = join(fx.project, "..", "other", "same-name");
+  mkdirSync(join(other, ".handoff"), { recursive: true });
+  writeFileSync(join(other, ".handoff/corrections.md"), corrections);
+  await obsidian({ vault: fx.vault, project: other });
+  assert.equal(readdirSync(join(fx.vault, "Rules")).length, 10, "same-basename projects remain distinct");
+});

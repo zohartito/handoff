@@ -1,3 +1,4 @@
+import { assertSafeStatePath, readOrEmpty } from "./fs.js";
 import { promises as fs } from "node:fs";
 import { homedir } from "node:os";
 import { delimiter, join, resolve } from "node:path";
@@ -78,7 +79,7 @@ function parseEnvRoots(raw: string): string[] {
  */
 async function readUpdatedAt(metaPath: string): Promise<Date | null> {
   try {
-    const raw = await fs.readFile(metaPath, "utf8");
+    const raw = await readOrEmpty(metaPath);
     const obj = JSON.parse(raw) as unknown;
     if (!obj || typeof obj !== "object") return null;
     const updatedAt = (obj as Record<string, unknown>).updatedAt;
@@ -109,7 +110,8 @@ async function walk(
   const metaPath = join(dir, ".handoff", "meta.json");
   let metaExists = false;
   try {
-    const st = await fs.stat(metaPath);
+    await assertSafeStatePath(metaPath);
+    const st = await fs.lstat(metaPath);
     metaExists = st.isFile();
   } catch {
     metaExists = false;

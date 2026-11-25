@@ -31,9 +31,9 @@ import { buildCompactPrimer, buildSubagentPrimer } from "./prime.js";
  *
  * What it measures: retrieval quality — did the right entries reach the top of
  * the list. What it does NOT measure: end-to-end agent behaviour, whether the
- * agent read the primer, comprehension, or outcomes. The shipping ranker is
- * also task-blind (it ranks by recurrence and recency, never reading the task
- * text), so these scores compare fixed orderings against per-task human labels.
+ * agent read the primer, comprehension, or outcomes. The shipped selection
+ * combines task relevance and recency; these scores compare strategy-selected
+ * entry IDs before the final primer renderer applies its character budget.
  * The output says so on every run.
  */
 
@@ -46,8 +46,8 @@ export const SWEEP_THRESHOLDS = [2, 3, 4, 5, 6] as const;
 export const EVAL_CAVEAT =
   "This is a retrieval eval: it measures whether the ranker surfaces the entries\n" +
   "a human labelled relevant to each task. It does NOT measure agent behaviour,\n" +
-  "comprehension, or outcomes, and the shipping ranker is task-blind (it ranks by\n" +
-  "recurrence and recency, never reading the task). Treat the scores as a\n" +
+  "comprehension, or outcomes. Shipped selection uses task relevance with recency\n" +
+  "backfill. These are strategy scores, not the final budgeted primer. Treat them as a\n" +
   "comparison between ranking strategies on this corpus, not an absolute grade.";
 
 /** One entry of a pooled corpus (corrections + attempts). */
@@ -561,7 +561,7 @@ export async function evaluate(opts: EvaluateOpts = {}): Promise<void> {
     return;
   }
 
-  const strategy = opts.strategy ?? "recurrence";
+  const strategy = opts.strategy ?? "shipped";
   const report = evaluateStrategy(strategy, STRATEGIES[strategy]!, scenarios, opts.k);
   if (opts.json) {
     console.log(JSON.stringify({ mode: "single", report, caveat: EVAL_CAVEAT }, null, 2));

@@ -19,9 +19,12 @@ For Claude Code this is zero-friction (hooks auto-inject on session start, auto-
 ```bash
 cd my-project
 handoff init
+handoff install --tool claude-code
 ```
 
-Work normally in Claude Code — it hydrates from `.handoff/` on session start and logs as it goes.
+`init` creates state files only. Copy the hook settings printed by `install` into the project's `.claude/settings.json`, and add the [logging instructions](#integration-recipe-claude-code) to `CLAUDE.md`. Both steps are manual; `install` prints instructions without changing configuration.
+
+Run `handoff doctor` to check the hook wiring, then start a new Claude Code session. SessionStart hydrates context and Stop captures selected events; the logging instructions ask the agent to record decisions and corrections as it works.
 
 Hit a rate limit? Switch tools:
 
@@ -33,13 +36,14 @@ State is saved, primer is on your clipboard, Cursor is launching. Paste the prim
 
 ## Installation
 
-Requires Node 22.5+ (the Cursor ingest adapter uses the built-in `node:sqlite` module, which stabilised in 22.5). No other runtime dependencies beyond `commander`.
+Requires Node 22.22.3+ (the minimum validated runtime, also covered by CI). The Cursor adapter uses built-in `node:sqlite`, which is experimental in Node 22; the launcher suppresses that SQLite warning. No other runtime dependencies beyond `commander`.
 
 ```bash
 npm install -g @zohartito/handoff
 ```
 
-Or install from source as a fallback:
+These docs describe the 0.9.2 source release. If the published npm build does not yet provide `compact`, `stale`, `--key`, or `--evidence`, install this checkout from source and run `npm run release:check` to verify its built commands:
+
 
 ```bash
 git clone https://github.com/zohartito/handoff.git
@@ -55,11 +59,11 @@ Run `handoff <command> --help` for full options on any command.
 
 ### `handoff init [--from <tool>] [--force]`
 
-Scaffolds `.handoff/` in the current directory. `--from <tool>` seeds identity/environment from a known tool context. `--force` overwrites an existing folder.
+Scaffolds `.handoff/` in the current directory. `--from <tool>` records the initial source tool in `meta.json`; identity and environment start as templates. Fill in identity manually and run `handoff save` to capture the environment. `--force` overwrites an existing folder.
 
 ### `handoff status`
 
-Shows which files in `.handoff/` are filled vs still template. Filled files show `●`, template files show `○`. Quick signal for whether the current session has captured anything meaningful yet.
+Shows which files in `.handoff/` are filled vs still template. Filled files show `●`, untouched templates show `○`, and the initial correction rule is labelled `seeded` with `◐`. Quick signal for whether the current session has captured anything meaningful yet.
 
 ### `handoff save`
 
@@ -67,7 +71,7 @@ Refreshes the environment snapshot in `environment.md` — os, user, node versio
 
 ### `handoff attempt <what> [--error <trace>] [--fix <desc>] [--summary <text>]`
 
-Logs a failed approach to `attempts.md` and `transcript.jsonl`. Use this the moment you know an approach didn't pan out — the next tool needs to know not to retry it.
+Logs a failed approach to `attempts.md`. Use this the moment you know an approach didn't pan out — the next tool needs to know not to retry it.
 
 ```bash
 handoff attempt "run migration with --force" \
@@ -102,7 +106,7 @@ Both commands accept `--evidence <paths...>` (also `evidence: string[]` on their
 
 ### `handoff prime [--tool <tool>] [--max-chars <n>]`
 
-Emits a tool-specific primer prompt to stdout. Pipe it, redirect it, or read it. `--tool` accepts `claude-code`, `claude-desktop`, `cursor`, `codex`, `gemini`, or `generic`. `--max-chars` caps the output length for tools with tight context budgets.
+Emits a tool-specific primer prompt to stdout. Pipe it, redirect it, or read it. `--tool` accepts `claude-code`, `claude-desktop`, `cursor`, `codex`, `gemini`, or `generic`. `--max-chars` caps the output length for tools with tight context budgets, including compact and subagent mode. Compact defaults to 2000 characters; an explicit larger cap increases that budget. If mandatory content or user constraints cannot fit, the CLI emits no primer and exits with an error; MCP reports the same failure as a tool error.
 
 ### `handoff install --tool <claude-code|claude-desktop|cursor>`
 
@@ -110,7 +114,7 @@ Prints the exact integration instructions for the named tool — the `.claude/se
 
 ### `handoff hook <session-start|user-prompt-submit|stop|pre-compact|rate-limit>`
 
-Internal. Called by the Claude Code hook system. Do not invoke directly unless you're debugging the hook wiring. `stop` and `pre-compact` read Claude Code's JSON payload on stdin (including `transcript_path`) and, on top of refreshing the environment snapshot, **auto-capture** failed build/test attempts and user corrections from the session transcript. Measured on real sessions this catches only a few percent of corrections (see [Keeping `.handoff/` current](#keeping-handoff-current)) — it supplements an explicit end-of-session handoff, it does not replace one. Auto-capture is best-effort and can never break a session; it dedupes via a per-session cursor plus content hashes stored in `.handoff/.capture-state.json`, tags entries with `**source:** auto`, and never writes decisions or a transcript.
+Internal. Called by the Claude Code hook system. Do not invoke directly unless you're debugging the hook wiring. `stop` and `pre-compact` read Claude Code's JSON payload on stdin (including `transcript_path`) and **auto-capture** failed build/test attempts and user corrections from the session transcript. Only `stop` also refreshes the environment snapshot; `pre-compact` leaves it unchanged. Measured on real sessions this catches only a few percent of corrections (see [Keeping `.handoff/` current](#keeping-handoff-current)) — it supplements an explicit end-of-session handoff, it does not replace one. Auto-capture is best-effort and can never break a session; it dedupes via a per-session cursor plus content hashes stored in `.handoff/.capture-state.json`, tags entries with `**source:** auto`, and never writes decisions or a transcript. Automatic attempts and corrections redact common credential assignments, authorization values, private-key blocks and URL passwords before persistence. Raw transcript storage requires an explicit `capture` or paste-ingest command; manual logs and explicit raw captures remain verbatim, so review them before committing.
 
 ### `handoff ingest --from <claude-code|cursor|codex|gemini|paste> [--session <id>] [--list] [--out <path>] [--project <path>]`
 
@@ -122,7 +126,7 @@ Reads past AI agent sessions and produces a structured markdown summary. Useful 
 - `--from gemini` reads Gemini saved chats / checkpoints from `~/.gemini/tmp/...`.
 - `--from paste` reads a transcript you've already copied out of a tool that has no on-disk logs (Claude Desktop, ChatGPT web, etc.). Exactly one of `--file <path>`, `--stdin`, or `--clipboard` must be supplied. The raw paste lands in `.handoff/transcript.md`; the rendered summary goes to `.handoff/ingested-context.md`.
 - `--list` enumerates available sessions instead of ingesting.
-- `--session <id>` picks a specific session; omit to use the most recent.
+- `--session <id>` picks a specific session; Claude Code automatic selection uses the most recent session whose recorded cwd matches the project. If none matches, it fails; use an explicit session ID to intentionally import a parent or sibling session.
 - `--out <path>` writes the summary to a file; omit for stdout.
 - `--project <path>` scopes the search to a specific project root.
 
@@ -156,25 +160,27 @@ One-shot handoff. Saves current state, builds a tool-specific primer, copies it 
 - `--no-save` skips the env refresh.
 - `--no-launch` copies the primer to the clipboard but does not spawn the tool. Useful if the target tool is already open.
 
-Supported targets: `claude-code`, `claude-desktop`, `cursor`, `codex`, `gemini`, `generic`. For `claude-desktop` the launch step is always skipped (GUI app, no reliable CLI shim) — primer is copied, you open Claude Desktop and paste into the relevant Project yourself.
+Supported switch targets: `claude-code`, `claude-desktop`, `cursor`, `codex`, `gemini`. For a generic primer, use `handoff prime --tool generic`. For `claude-desktop` the launch step is always skipped (GUI app, no reliable CLI shim) — primer is copied, you open Claude Desktop and paste into the relevant Project yourself.
 
 ### `handoff obsidian sync [--vault <path>] [--project <path>]`
 
 Writes the current project's `.handoff/` content into an Obsidian vault so your session state survives as permanent cross-project memory. Produces:
 
 - `Daily/YYYY-MM-DD.md` — appends one `## handoff: <project> — HH:MM` block per run (idempotent within the same minute).
-- `Decisions/YYYY-MM-DD_<project>_<slug>.md` — one note per decision entry; updates in place if the entry body changes.
-- `Rules/<project>__<slug>.md` — one note per correction (append-only rulebook).
+- `Decisions/YYYY-MM-DD_<project>_<project-id>_<entry-id>.md` — one note per decision entry; updates in place if the entry body changes.
+- `Rules/<project>__<project-id>_<entry-id>.md` — one note per correction (append-only rulebook).
+
+Project and entry identities are persisted in `.handoff/obsidian-ids.json`; keep it with the logs. Decision dates come from entry timestamps, not the sync date. Legacy slug-named exports are left untouched.
 
 Vault resolution: `--vault` wins over `HANDOFF_OBSIDIAN_VAULT`. No vault configured → error.
 
 ### `handoff search <query> [--limit <n>] [--root <path>...] [--case-sensitive]`
 
-Greps every `.handoff/` folder on the machine for `<query>` and returns ranked results grouped by project. Default roots: `$HOME` plus common code dirs (`~/code`, `~/repos`, `~/dev`, `~/projects`, `~/src`, `~/work`, `~/Documents/GitHub`). Override with `--root` (repeatable) or `HANDOFF_SEARCH_ROOTS` (colon/semicolon separated). Ranking: exact-word > project recency > file order.
+Searches six files in discovered `.handoff/` projects: `task.md`, `progress.md`, `decisions.md`, `corrections.md`, `attempts.md`, and `HANDOFF.md`. Other files (including open loops, identity and transcripts) are not searched. Results are ranked and grouped by project. Default roots: `$HOME` plus common code dirs (`~/code`, `~/repos`, `~/dev`, `~/projects`, `~/src`, `~/work`, `~/Documents/GitHub`, `~/SynologyDrive`). Override with `--root` (repeatable) or `HANDOFF_SEARCH_ROOTS` (colon/semicolon separated). Ranking: exact-word > project recency > file order.
 
 ### `handoff patterns [--top <n>] [--root <path>...]`
 
-Aggregates correction themes, failure modes, and tool usage across every `.handoff/` on the machine. Uses the same discovery roots as `search`. Tokenizes corrections/attempts (unigrams + bigrams, stopwords filtered), tags each theme with the project languages it appeared in, and reports tool-usage counts. Useful for spotting recurring mistakes you keep correcting LLMs about.
+Aggregates correction themes, failure modes, and initial source-tool attribution across discovered `.handoff/` projects. Its separate walker defaults to `$HOME`, `~/Documents`, `~/code`, `~/Projects`, `~/src`, `~/repos`, `~/dev`, and `~/workspace`; use `--root` or `HANDOFF_SEARCH_ROOTS` to choose explicit roots for either command. Tokenizes corrections/attempts (unigrams + bigrams, stopwords filtered), tags each theme with the project languages it appeared in, and counts each project once under its initial `meta.sourceTool`. These are source attribution counts; switches and tool-use events are not counted. Useful for spotting recurring mistakes you keep correcting LLMs about.
 
 ### `handoff verify [--check] [--file <path>] [--stdin]`
 
@@ -197,16 +203,16 @@ Runs an MCP (Model Context Protocol) server over stdio so any MCP-speaking agent
 Developer tool that makes the relevance-ranking thresholds decidable by measurement instead of reasoning. It is a **deterministic retrieval eval**: over a set of labelled fixture scenarios (`tests/fixtures/eval/`), it asks whether the ranker surfaces the corrections/attempts a human marked relevant to each task, and reports precision, recall, F1, and MRR — no LLM, no API key, offline and reproducible.
 
 ```bash
-handoff evaluate                 # score the shipping "recurrence" ranking, per scenario
-handoff evaluate --compare       # recurrence vs a plain recency control, side by side
+handoff evaluate                 # score the shipped selection strategy, per scenario
+handoff evaluate --compare       # shipped, recurrence, relevance and recency, side by side
 handoff evaluate --sweep         # sweep PROMOTION_THRESHOLD 2..6 and report F1 for each
 handoff evaluate --primer        # do labelled entries survive the real compact/subagent primer text?
 handoff evaluate --json          # machine-readable output
 ```
 
-The `recurrence` strategy calls the real `rankEntries` (the shipping code is the baseline, not a copy); `recency` is a last-N control. On the current corpus recurrence beats recency on every metric, and the sweep puts the shipped `PROMOTION_THRESHOLD = 3` on the optimal F1 plateau (raising it to 4+ discards genuine three-time themes).
+The default `shipped` strategy combines task relevance with recency backfill. `recurrence` calls `rankEntries`; `recency` is a last-N control. On the current corpus recurrence beats recency on every metric, and the sweep puts the shipped `PROMOTION_THRESHOLD = 3` on the optimal F1 plateau (raising it to 4+ discards genuine three-time themes).
 
-**What it measures — and does not.** This is retrieval quality: did the right entries reach the top of the list. It does **not** measure agent behaviour, comprehension, or outcomes, and the shipping ranker is task-blind (it orders by recurrence and recency, never reading the task text). The output states this on every run. See `tests/fixtures/eval/README.md` for the label format.
+**What it measures — and does not.** This is retrieval quality: did the right entries reach the top of the list. It does **not** measure agent behaviour, comprehension, or outcomes, and it scores strategy-selected entry IDs rather than executing the final budgeted primer. Character-budget shedding and constraint reinjection can change delivered context. The output states this on every run. See `tests/fixtures/eval/README.md` for the label format.
 
 ### `handoff compact [attempts|corrections|decisions|all] [--keep <n>] [--dry-run]`
 
@@ -235,7 +241,7 @@ Compaction **relocates and counts; it never rewrites an entry's prose.** Lossy s
 Everything below is a **safety net under that**, not a replacement for it.
 
 - **Auto-capture — a weak net, and measured as such.** The `Stop` and `PreCompact` hooks read the session transcript and log failed build/test attempts and user corrections, tagged `**source:** auto`. Audited against 395 real user messages across 15 sessions, the original rules caught **zero**; after widening them it catches a low single-digit number. That is not a bug to be tuned away — most real corrections carry no cue word at all ("But the whole idea is that they didn't turn it on at the beginning" is a correction, and no lexical rule will see it). Treat auto-capture as a bonus when it fires, never as the reason state stays current.
-- **Relevance ranking.** Corrections that recur across three or more entries are promoted to a condensed "Standing rules" block above the recent tail, so a rule you've repeated for months isn't pushed out by three fresh one-offs. Auto-captured entries need a higher bar (5), and a theme no human ever confirmed doesn't promote at all.
+- **Relevance ranking.** Corrections that recur across three or more entries are promoted to a condensed "Standing rules" block above the recent tail, so a rule you've repeated for months isn't pushed out by three fresh one-offs. Themes made up only of auto-captured entries promote at a higher bar of 5, even without a manually logged confirmation.
 - **Mid-session re-injection.** SessionStart re-fires after a compaction (`source: "compact"`), so the full primer already returns then. The optional `UserPromptSubmit` hook covers ordinary drift *between* compactions by re-surfacing standing rules only — and stays silent when nothing has recurred, so the common case costs nothing.
 
 And `handoff doctor` flags an artifact that has drifted out of sync: commits landing with no `handoff save`, a `task.md` naming a version behind `package.json`, or logs gone quiet across many commits. All advisory — staleness never changes the exit code.
@@ -258,9 +264,8 @@ A `.handoff/` directory looks like this:
   open-loops.md       # unresolved questions, TODOs for next session
   references.md       # links, docs, issue numbers
   meta.json           # schema version, source tool, timestamps, project root
-  files.json          # manifest of the above
-  tool-history.jsonl  # append-only per-tool event log
-  transcript.jsonl    # append-only narrative log
+  files.json          # placeholder written by init; no command maintains it yet
+  transcript.md       # pasted conversation text, appended by `capture` / `ingest --from paste`
 ```
 
 **Format constraints:**
@@ -334,7 +339,7 @@ These keep the `.handoff/` folder current so the next tool has full context.
 
 ## Integration recipe: Cursor
 
-Cursor does not yet have a stable hook or MCP surface for this. Until it does:
+Cursor can use the [MCP server configuration below](#integration-recipe-mcp-server) for native state tools. For a clipboard-based session handoff, run:
 
 ```bash
 handoff switch cursor
@@ -356,7 +361,7 @@ Log significant events with `handoff attempt`, `handoff decide`, and
 `handoff correct` as you work.
 ```
 
-Codex and Gemini follow the same pattern: `handoff switch codex`, `handoff switch gemini`. Native integrations will land as those tools expose suitable extension points.
+Codex and Gemini also support the switch workflow: `handoff switch codex`, `handoff switch gemini`. A Codex MCP configuration is included below.
 
 ## Integration recipe: MCP server
 
@@ -375,14 +380,16 @@ It exposes six tools:
 
 The server operates on one project root, taken from `--cwd`, else `HANDOFF_PROJECT_ROOT`, else the process working directory. Point it at the project you're handing off.
 
+Use a reviewed local checkout for MCP. Run `npm ci`, `npm run build`, and `npm run release:check` in that checkout first. Configure an absolute Node executable and the built checkout's launcher below; MCP startup then executes that local copy without resolving a package from npm. Upgrade the checkout and its lockfile deliberately, rebuild, and rerun the release check.
+
 **Claude Desktop** — add to `claude_desktop_config.json` (macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`; Windows: `%APPDATA%\Claude\claude_desktop_config.json`):
 
 ```json
 {
   "mcpServers": {
     "handoff": {
-      "command": "npx",
-      "args": ["-y", "@zohartito/handoff", "mcp"],
+      "command": "/absolute/path/to/node",
+      "args": ["/absolute/path/to/handoff/bin/handoff.mjs", "mcp"],
       "env": { "HANDOFF_PROJECT_ROOT": "/absolute/path/to/your/project" }
     }
   }
@@ -393,8 +400,8 @@ The server operates on one project root, taken from `--cwd`, else `HANDOFF_PROJE
 
 ```toml
 [mcp_servers.handoff]
-command = "npx"
-args = ["-y", "@zohartito/handoff", "mcp"]
+command = "/absolute/path/to/node"
+args = ["/absolute/path/to/handoff/bin/handoff.mjs", "mcp"]
 env = { HANDOFF_PROJECT_ROOT = "/absolute/path/to/your/project" }
 ```
 
@@ -404,14 +411,14 @@ env = { HANDOFF_PROJECT_ROOT = "/absolute/path/to/your/project" }
 {
   "mcpServers": {
     "handoff": {
-      "command": "npx",
-      "args": ["-y", "@zohartito/handoff", "mcp", "--cwd", "/absolute/path/to/your/project"]
+      "command": "/absolute/path/to/node",
+      "args": ["/absolute/path/to/handoff/bin/handoff.mjs", "mcp", "--cwd", "/absolute/path/to/your/project"]
     }
   }
 }
 ```
 
-If `handoff` is installed globally (`npm i -g @zohartito/handoff`), replace `"command": "npx"` / `"args": ["-y", "@zohartito/handoff", "mcp", ...]` with `"command": "handoff"` / `"args": ["mcp", ...]`.
+Keep these paths pointed at the reviewed checkout and a supported Node installation. Restart the MCP client after a deliberate upgrade.
 
 ## Keyboard shortcuts and tray integration
 
@@ -421,7 +428,7 @@ Optional launchers live in `scripts/` (AutoHotkey v2 for Windows, AppleScript fo
 
 - **Local-first, file-based.** No cloud, no DB, no servers. The source of truth is `.handoff/` in your project root.
 - **Per-project.** Each repo has its own `.handoff/`. Context does not leak across projects.
-- **Integration layers per tool.** Claude Code uses hooks for zero-friction auto-inject. Cursor, Codex, and Gemini use `handoff switch` (clipboard plus launcher) until their extension stories mature.
+- **Integration layers per tool.** Claude Code uses hooks for zero-friction auto-inject. Cursor, Codex, and Gemini can use `handoff switch` (clipboard plus launcher); MCP clients can also use the native state tools.
 - **Ingest parsers.** Claude Code transcripts are read directly from JSONL. Cursor state is read from `state.vscdb` via the built-in `node:sqlite` module — no native bindings, no extra dependencies.
 
 ## Roadmap
@@ -432,7 +439,7 @@ Everything through v7 has shipped (0.7.x): Claude Code auto-inject hooks, Claude
 
 - Validated live on Windows and macOS (full CLI pass on real hardware; clipboard via `pbcopy` confirmed). Linux is covered by the CI test matrix but launcher/clipboard paths haven't run on a live Linux desktop — file issues if you hit one.
 - Proactive rate-limit warning is not possible yet. Claude Code only fires `StopFailure` after the limit is hit. Blocked upstream.
-- `handoff ingest --from cursor` requires Node 22+ for built-in `node:sqlite`. On Node 20 it exits with a clear error.
+- Node 20 is unsupported. SQLite is imported during CLI startup, so an unsupported runtime can fail before argument handling, even for `--help`; use the minimum Node version listed under Installation.
 
 ## Contributing
 

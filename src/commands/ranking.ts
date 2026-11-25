@@ -101,6 +101,7 @@ export function stripInvisibleUnicode(s: string): string {
  * entries. Entries are appended by `handoff attempt|correct` using a
  * `## <ISO-timestamp>` header followed by a trailing `---`. We split on
  * `## ` headers when present; fall back to `\n---\n` separators otherwise.
+ * Headings and dividers inside fenced code belong to the enclosing entry.
  *
  * Returns entries in original order, with the file's `# Title` + HTML
  * comment banner stripped, and any invisible Unicode neutralised — every
@@ -114,18 +115,37 @@ export function splitEntries(raw: string): string[] {
   const trimmed = cleaned.trim();
   if (!trimmed) return [];
 
-  // Primary strategy: split on `## ` H2 headers (what attempt/correct emit).
-  if (/^## /m.test(trimmed)) {
-    const parts = trimmed.split(/\n(?=## )/g);
-    return parts
+  const lines = trimmed.split("\n");
+  const headers: number[] = [];
+  const dividers: number[] = [];
+  let fence: { char: string; length: number } | null = null;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const marker = line.match(/^ {0,3}(`{3,}|~{3,})(.*)\r?$/);
+    if (fence) {
+      if (marker && marker[1][0] === fence.char && marker[1].length >= fence.length && !marker[2].trim()) fence = null;
+      continue;
+    }
+    if (marker) {
+      fence = { char: marker[1][0], length: marker[1].length };
+      continue;
+    }
+    if (/^## /.test(line)) headers.push(i);
+    if (line === "---" && i > 0 && i < lines.length - 1) dividers.push(i);
+  }
+
+  // Primary strategy: split on H2 headers outside fenced code.
+  if (headers.length) {
+    const starts = [0, ...headers.filter((i) => i > 0)];
+    return starts
+      .map((start, i) => lines.slice(start, starts[i + 1] ?? lines.length).join("\n"))
       .map((p) => p.replace(/\n---\s*$/g, "").trim())
       .filter((p) => p.length > 0);
   }
 
-  // Fallback: entries separated only by `---` dividers.
-  return trimmed
-    .split(/\n---\n/g)
-    .map((p) => p.trim())
+  // Fallback: entries separated only by unfenced `---` dividers.
+  return [0, ...dividers.map((i) => i + 1)]
+    .map((start, i) => lines.slice(start, dividers[i] ?? lines.length).join("\n").trim())
     .filter((p) => p.length > 0);
 }
 

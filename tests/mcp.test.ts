@@ -327,3 +327,49 @@ test("stdout carries ONLY valid JSON-RPC — no stray log output leaks in", asyn
     await c.close();
   }
 });
+
+test("HOF-08: MCP and CLI refuse external state symlinks", async (t) => {
+  const { symlinkSync, unlinkSync } = await import("node:fs");
+  const { spawnSync } = await import("node:child_process");
+  const root = scaffold();
+  const outside = join(mkdtempSync(join(tmpdir(), "handoff-outside-")), "data.md");
+  writeFileSync(outside, "OUTSIDE_STATE_MARKER");
+  for (const file of ["open-loops.md", "attempts.md"]) {
+    const path = join(root, ".handoff", file);
+    unlinkSync(path);
+    try { symlinkSync(outside, path); }
+    catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "EPERM") return t.skip("symlinks unavailable");
+      throw err;
+    }
+  }
+  const c = new Client(root);
+  try {
+    for (const [name, args] of [
+      ["handoff_open_loops", {}],
+      ["handoff_log_attempt", { what: "synthetic attempt" }],
+    ] as const) {
+      const res = await c.request("tools/call", { name, arguments: args });
+      assert.equal(res.result.isError, true);
+      assert.ok(!JSON.stringify(res.result).includes("OUTSIDE_STATE_MARKER"));
+    }
+    assert.equal(readFileSync(outside, "utf8"), "OUTSIDE_STATE_MARKER");
+    const result = spawnSync(process.execPath, [CLI, "prime"], { cwd: root, encoding: "utf8" });
+    assert.notEqual(result.status, 0);
+    assert.doesNotMatch(result.stdout, /OUTSIDE_STATE_MARKER/);
+  } finally { await c.close(); }
+});
+
+test("HOF-09: MCP reports constraint loss as an error", async () => {
+  const root = scaffold();
+  writeFileSync(join(root, ".handoff/corrections.md"), "# Corrections\n" +
+    Array.from({ length: 25 }, (_, i) =>
+      `\n## 2026-01-${String(i + 1).padStart(2, "0")}T00:00:00Z\n\n**user said:** constraint ${i} ${"guardrail ".repeat(20)}\n\n---\n`).join(""));
+  const c = new Client(root);
+  try {
+    const res = await c.request("tools/call", { name: "handoff_context", arguments: {} });
+    assert.equal(res.result.isError, true);
+    assert.match(res.result.content[0].text, /constraint|budget/);
+    assert.doesNotMatch(res.result.content[0].text, /# HANDOFF PRIMER/);
+  } finally { await c.close(); }
+});

@@ -2,8 +2,9 @@ import { resolveHandoffPaths, type HandoffPaths } from "../format/paths.js";
 import { exists, readOrEmpty } from "../util/fs.js";
 import type { Meta } from "../format/types.js";
 import { loadMeta } from "../format/migrate.js";
-import { rankEntries, splitEntries, condenseEntry, entryId, type RankedEntries } from "./ranking.js";
+import { rankEntries, splitEntries, isSuperseded, condenseEntry, entryId, type RankedEntries } from "./ranking.js";
 import { annotateEvidence, staleEntryIds, STALE_ANNOTATION } from "./evidence.js";
+import { annotateWikiSources } from "./wiki.js";
 import { retrieveFromRaw } from "./retrieval.js";
 import { computeHandoverRecord, renderLossLine } from "../format/handover.js";
 import {
@@ -149,36 +150,47 @@ export async function prime(opts: PrimeOpts): Promise<void> {
   const useSubagent = !!opts.subagent;
   const useCompact = !useSubagent && (opts.compact || maxChars < COMPACT_THRESHOLD);
 
-  const output = useSubagent
-    ? await buildSubagentPrimer(paths, opts.tool)
-    : useCompact
-      ? await buildCompactPrimer(paths, opts.tool)
-      : await buildPrimer(paths, opts.tool, maxChars);
-
-  process.stdout.write(output);
-  if (!output.endsWith("\n")) process.stdout.write("\n");
-
-  // Constraint-preserving compaction guard. The compact/subagent primers are a
-  // lossy compaction step; verify every user constraint survived it. If one was
-  // dropped (only possible under pathological budget pressure, since the block
-  // is shed-protected), fail loudly rather than hand off a primer missing a
-  // guardrail. stderr keeps stdout — the primer itself — clean for piping.
-  if (useCompact || useSubagent) {
-    const constraints = extractConstraints(await readOrEmpty(paths.corrections));
-    const { ok, missing } = verifyConstraintsPreserved(output, constraints);
-    if (!ok) {
-      console.error(
-        `\n⚠️  handoff: ${missing.length} user constraint(s) were dropped during ` +
-          `compaction and could NOT be re-injected:`,
-      );
-      for (const m of missing) console.error(`   - ${m.text}`);
-      console.error(
-        "   This primer is missing a guardrail. Use `handoff prime` (full) " +
-          "or raise --max-chars.",
-      );
-      process.exitCode = 1;
-    }
+  try {
+    const output = await buildCheckedPrimer(paths, opts.tool, {
+      mode: useSubagent ? "subagent" : useCompact ? "compact" : "full",
+      maxChars: opts.maxChars,
+    });
+    process.stdout.write(output);
+  } catch (err) {
+    if (!(err instanceof PrimerBudgetError)) throw err;
+    console.error(err.message);
+    process.exitCode = 1;
   }
+}
+
+export class PrimerBudgetError extends Error {}
+
+/** One delivery gate shared by CLI, MCP and switching. Never emit a partial guardrail. */
+export async function buildCheckedPrimer(
+  paths: HandoffPaths,
+  tool: Tool,
+  opts: { mode: "full" | "compact" | "subagent"; maxChars?: number },
+): Promise<string> {
+  const budget = opts.maxChars ?? (opts.mode === "full" ? Infinity :
+    opts.mode === "compact" ? COMPACT_THRESHOLD : SUBAGENT_BUDGET);
+  if (!(budget > 0) || (budget !== Infinity && !Number.isInteger(budget))) {
+    throw new PrimerBudgetError("--max-chars must be a positive integer.");
+  }
+  const output = opts.mode === "full" ? await buildPrimer(paths, tool, budget) :
+    opts.mode === "compact" ? await buildCompactPrimer(paths, tool, budget) :
+    await buildSubagentPrimer(paths, tool, budget);
+  const constraints = extractConstraints(await readOrEmpty(paths.corrections));
+  const { missing } = verifyConstraintsPreserved(output, constraints);
+  if (missing.length) {
+    throw new PrimerBudgetError(
+      `${missing.length} user constraint(s) were dropped during compaction; no primer emitted. ` +
+      "Use handoff prime (full) or raise --max-chars.",
+    );
+  }
+  if (output.length > budget || output.includes("_(primer truncated to fit)_")) {
+    throw new PrimerBudgetError("Mandatory primer content cannot fit the character budget; raise --max-chars.");
+  }
+  return output;
 }
 
 export async function buildPrimer(
@@ -231,7 +243,10 @@ export async function buildPrimer(
   for (const s of sections) {
     const raw = await readOrEmpty(s.path);
     const annotated = s.path === paths.decisions || s.path === paths.corrections
-      ? await annotateEvidence(paths.root, raw) : raw;
+      ? await annotateEvidence(paths.root, splitEntries(raw).filter((e) => !isSuperseded(e)).join("\n\n---\n\n"))
+      : s.path === paths.wiki
+        ? annotateWikiSources(raw, await readOrEmpty(paths.corrections))
+        : raw;
     const body = cleanBody(annotated);
     if (!body) continue;
     parts.push({ title: s.label, body });
@@ -320,8 +335,8 @@ function rateLimitSection(tool: Tool, variant: "full" | "compact"): string {
   const target = suggestedSwitchTarget(tool);
   if (variant === "compact") {
     return [
-      `Signals: latency spikes, \`429\`/rate-limit errors, user hits a cap, long pauses.`,
-      `If any: log \`handoff correct "rate limit on ${tool}"\`, tell user \`handoff switch ${target}\`, summarize in-flight.`,
+      `Signals: slow calls/pauses, \`429\`, rate limits or user caps.`,
+      `Log \`handoff correct "rate limit on ${tool}" --user-said "<quote>"\`; suggest \`handoff switch ${target}\`; summarize.`,
     ].join("\n");
   }
   return [
@@ -607,6 +622,7 @@ function shedToBudget(parts: string[], budget: number): string {
 export async function buildCompactPrimer(
   paths: HandoffPaths,
   tool: Tool,
+  budget = COMPACT_THRESHOLD,
 ): Promise<string> {
   const parts: string[] = [];
   parts.push(`# HANDOFF PRIMER (compact)`);
@@ -699,12 +715,12 @@ export async function buildCompactPrimer(
   const record = await computeHandoverRecord(paths, "compact");
   parts.push(`## Handover fidelity\n\n${renderLossLine(record)}`);
 
-  return shedToBudget(parts, COMPACT_THRESHOLD);
+  return shedToBudget(parts, budget);
 }
 
 /**
  * Extract os / node / git-branch from environment.md into a single line.
- * The auto-generated section uses `- **key:** value` bullets; we pick a
+ * The saved section uses `- key: value`; also accept legacy bold labels. Pick a
  * few high-signal keys and format as `os: linux | node: 22.11.0 | branch: main`.
  * Falls back to "" if nothing recognizable is found.
  */
@@ -713,8 +729,8 @@ function extractEnvOneLine(raw: string): string {
   const lines = raw.split("\n");
   const pick = (label: RegExp): string | null => {
     for (const line of lines) {
-      const m = line.match(/^\s*[-*]\s*\*\*([^*]+)\*\*:?\s*(.+?)\s*$/);
-      if (m && label.test(m[1])) return m[2];
+      const m = line.match(/^\s*[-*]\s*(?:\*\*([^*]+)\*\*:?\s*|([^:]+):\s*)(.+?)\s*$/);
+      if (m && label.test(m[1] ?? m[2])) return m[3];
     }
     return null;
   };
@@ -744,6 +760,7 @@ function extractEnvOneLine(raw: string): string {
 export async function buildSubagentPrimer(
   paths: HandoffPaths,
   _tool: Tool,
+  budget = SUBAGENT_BUDGET,
 ): Promise<string> {
   const parts: string[] = [];
   parts.push(`# HANDOFF PRIMER (subagent)`);
@@ -807,5 +824,5 @@ export async function buildSubagentPrimer(
   const record = await computeHandoverRecord(paths, "subagent");
   parts.push(`## Handover fidelity\n\n${renderLossLine(record)}`);
 
-  return shedToBudget(parts, SUBAGENT_BUDGET);
+  return shedToBudget(parts, budget);
 }

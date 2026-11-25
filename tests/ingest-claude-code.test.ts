@@ -74,23 +74,23 @@ test("summarizeSession skips malformed JSONL lines without crashing", async () =
 });
 
 test("cwdMatchesProject: exact and descendant paths match, unrelated paths do not", () => {
-  const proj = "C:\\Users\\zohar_4ta16fp\\handoff";
+  const proj = "C:\\Users\\sample_user\\handoff";
   // exact match (same case)
-  assert.equal(cwdMatchesProject("C:\\Users\\zohar_4ta16fp\\handoff", proj), true);
+  assert.equal(cwdMatchesProject("C:\\Users\\sample_user\\handoff", proj), true);
   // case-insensitive (Windows paths)
-  assert.equal(cwdMatchesProject("c:\\users\\zohar_4ta16fp\\handoff", proj, "win32"), true);
+  assert.equal(cwdMatchesProject("c:\\users\\sample_user\\handoff", proj, "win32"), true);
   // trailing slash tolerated
-  assert.equal(cwdMatchesProject("C:\\Users\\zohar_4ta16fp\\handoff\\", proj), true);
+  assert.equal(cwdMatchesProject("C:\\Users\\sample_user\\handoff\\", proj), true);
   // descendant
-  assert.equal(cwdMatchesProject("C:\\Users\\zohar_4ta16fp\\handoff\\src", proj), true);
+  assert.equal(cwdMatchesProject("C:\\Users\\sample_user\\handoff\\src", proj), true);
   // forward-slash mix
-  assert.equal(cwdMatchesProject("C:/Users/zohar_4ta16fp/handoff", proj), true);
+  assert.equal(cwdMatchesProject("C:/Users/sample_user/handoff", proj), true);
   // parent is NOT a match — this is the bug Codex found
-  assert.equal(cwdMatchesProject("C:\\Users\\zohar_4ta16fp", proj), false);
+  assert.equal(cwdMatchesProject("C:\\Users\\sample_user", proj), false);
   // sibling is not a match
-  assert.equal(cwdMatchesProject("C:\\Users\\zohar_4ta16fp\\other", proj), false);
+  assert.equal(cwdMatchesProject("C:\\Users\\sample_user\\other", proj), false);
   // prefix-only (no separator) is not a match: /foo/handoff-extra should NOT match /foo/handoff
-  assert.equal(cwdMatchesProject("C:\\Users\\zohar_4ta16fp\\handoff-extra", proj), false);
+  assert.equal(cwdMatchesProject("C:\\Users\\sample_user\\handoff-extra", proj), false);
   // null cwd never matches
   assert.equal(cwdMatchesProject(null, proj), false);
 });
@@ -222,4 +222,34 @@ test("summarizeSession: empty file returns a well-formed empty summary", async (
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("HOF-21: latest ingest refuses sibling sessions unless explicitly selected", async () => {
+  const { mkdtemp, mkdir, writeFile, readFile, realpath } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { spawnSync } = await import("node:child_process");
+  // macOS tmpdir() is a symlink (/var -> /private/var); the CLI sees the resolved cwd.
+  const root = await realpath(await mkdtemp(join(tmpdir(), "handoff-scoped-ingest-")));
+  const project = join(root, "target");
+  const home = join(root, "home");
+  await mkdir(join(project, ".handoff"), { recursive: true });
+  const encoded = root.replace(/[^a-zA-Z0-9]/g, "-");
+  const sessions = join(home, ".claude", "projects", encoded);
+  await mkdir(sessions, { recursive: true });
+  await writeFile(join(sessions, "sibling-session.jsonl"), JSON.stringify({
+    type: "user", cwd: join(root, "sibling"), timestamp: "2026-11-15T00:00:00Z",
+    sessionId: "sibling-session", message: { role: "user", content: "SIBLING_ONLY_MARKER" },
+  }) + "\n");
+  const cli = fileURLToPath(new URL("../src/cli.js", import.meta.url));
+  const run = (...args: string[]) => spawnSync(process.execPath, [cli, "ingest", "--from", "claude-code", ...args], {
+    cwd: project, encoding: "utf8", env: { ...process.env, HOME: home, USERPROFILE: home },
+  });
+  const latest = run();
+  assert.equal(latest.status, 1);
+  assert.doesNotMatch(latest.stdout, /SIBLING_ONLY_MARKER/);
+  await assert.rejects(() => readFile(join(project, ".handoff/ingested-context.md")));
+  const explicit = run("--session", "sibling-session");
+  assert.equal(explicit.status, 0, explicit.stderr);
+  assert.match(await readFile(join(project, ".handoff/ingested-context.md"), "utf8"), /SIBLING_ONLY_MARKER/);
 });

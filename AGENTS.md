@@ -6,15 +6,19 @@ Portable session-state CLI for AI coding tools. When you switch mid-task between
 ## How to verify a change
 - Tests: `npm test`
 - Lint:  `npm run lint`
+- Release: `npm run release:check`; also run `node scripts/release-check.mjs <unpacked-package>` against the local npm tarball before publishing.
 - First-run walkthrough: `npm run build && node scripts/first-run-walkthrough.mjs`.
   Runs in a temporary repo and compares the current build with the recorded
   baseline in `docs/first-run-before.json`; see `docs/first-run-walkthrough.md`.
 
 ## Self-improving loop (close the loop)
-Run an agent until it verifies its own output, then commit:
+After installing declared dependencies with `npm ci`, verify locally before committing:
+```bash
+npm test
+npm run lint
+git diff --check
 ```
-python3 ~/.agent-kit/verify_loop.py --task "<what to do>" --verify "npm test && npm run lint" --cwd . --max-iters 5 --commit
-```
+Review the diff and commit only after these repository-local checks pass.
 
 ## Layout
 `.claude/`, `.github/`, `.handoff/`, `.planning/`, `bin/`, `scripts/`, `src/`, `templates/`, `tests/`
@@ -25,10 +29,11 @@ python3 ~/.agent-kit/verify_loop.py --task "<what to do>" --verify "npm test && 
     `tests/retrieval.test.ts` + `tests/evaluate.test.ts` via `node --test`; emits `loop-result/v1`
     JSON; exit code = gate. Reuses the existing suites (does NOT duplicate them).
   - Schedule: `scripts/launchd/com.zohartito.handoff.retrieval-eval.plist` (nightly 03:00).
-    NOT loaded — load with `launchctl load ~/Library/LaunchAgents/com.zohartito.handoff.retrieval-eval.plist`.
+    NOT loaded — replace the checkout placeholder in the plist, copy it into
+    `~/Library/LaunchAgents/`, then load that copy with `launchctl load`.
   - Flywheel: local runs append to `.claude/LEARNINGS.md`; `--ci`/`--dry-run` skip the append.
   - Note: this is the scheduled complement to the session-end self-improving loop
-    (`verify_loop.py`) — it guards ranking/metric drift when no PR is open.
+    (the checks above) — it guards ranking/metric drift when no PR is open.
 
 ## Primer preservation eval
 `handoff evaluate --primer` renders the real compact/subagent primers per `tests/fixtures/eval`
@@ -48,6 +53,17 @@ boundary: no lossy summarization of load-bearing traces). Idempotent.
 - Follow CONVENTIONS.md (if present) and the global ~/.claude/CLAUDE.md.
 - Make surgical, single-purpose changes; match existing style.
 
+## Obsidian sync identities
+`obsidian sync` maintains `.handoff/obsidian-ids.json` for independent note identities.
+Keep it with the logs; content edits and later sync dates retain the same note.
+
+## Managed hooks
+Install, doctor and removal share `src/commands/managed-hooks.ts`, including optional hooks.
+
+## State file safety
+All `.handoff/` reads and writes use the guarded helpers in `src/util/fs.ts`.
+Reject state symlinks (including parent directories); replacements are atomic.
+
 ## Evidence freshness
 `decide` and `correct` accept `--evidence <paths...>` (MCP: `evidence: string[]`).
 `src/commands/evidence.ts` hashes repo-contained files and checks recorded hashes;
@@ -55,6 +71,13 @@ boundary: no lossy summarization of load-bearing traces). Idempotent.
 an unreadable file flags its entry and never aborts a primer.
 Primers annotate stale evidence at render time without changing stored entries.
 Regression coverage lives in `tests/evidence.test.ts`.
+`wiki distill` writes `_Source: corrections.md#<id>_` per entry; the full primer flags wiki
+entries whose source correction is superseded or gone (`annotateWikiSources`, `tests/wiki.test.ts`).
+
+## Keyed revocation (HOF-06)
+`splitEntries` keeps fenced Markdown headings and dividers inside their owning entry,
+so filtering a revoked fact removes its entire body. Preserve this boundary in primers;
+parser and CLI/hook/switch regressions live in `tests/ranking.test.ts` and `tests/revocation.test.ts`.
 
 ## Lessons
 Corrections, gotchas, and "don't do X again" notes accumulate in `.claude/lessons.md`
