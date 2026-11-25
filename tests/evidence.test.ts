@@ -8,6 +8,7 @@ import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { decide } from "../src/commands/decide.js";
 import { correct } from "../src/commands/correct.js";
+import { attempt } from "../src/commands/attempt.js";
 import { captureEvidence, STALE_ANNOTATION } from "../src/commands/evidence.js";
 import { collectEvidenceStatus } from "../src/commands/stale.js";
 import { buildPrimer, buildCompactPrimer, buildSubagentPrimer, buildStandingRulesContext } from "../src/commands/prime.js";
@@ -232,4 +233,71 @@ test("MCP decision and correction schemas and handlers accept evidence and rejec
     }
   }
   assert.equal((await collectEvidenceStatus(paths)).length, 2);
+});
+
+test("CLI attempt --evidence records a hash and stale --check flags the attempt after edit/deletion", async (t) => {
+  const { root, paths } = await fixture(t);
+  assert.equal(cli(root, "attempt", "parse with pdfminer", "--error", "boom", "--evidence", "pyproject.toml").status, 0);
+  const raw = await fs.readFile(paths.attempts, "utf8");
+  const hash = createHash("sha256").update(await fs.readFile(join(root, "pyproject.toml"))).digest("hex").slice(0, 16);
+  assert.match(raw, new RegExp(`\\*\\*tried:\\*\\* parse with pdfminer\\r?\\n\\*\\*evidence:\\*\\* pyproject.toml@sha256:${hash}`));
+  let result = cli(root, "stale", "--check");
+  assert.equal(result.status, 0);
+  assert.match(result.stdout, /^OK attempts.md .* \*\*tried:\*\* parse with pdfminer — pyproject.toml/);
+  await fs.appendFile(join(root, "pyproject.toml"), "version = '2'\n");
+  result = cli(root, "stale", "--check");
+  assert.equal(result.status, 1);
+  assert.match(result.stdout, /^CHANGED attempts.md /);
+  await fs.unlink(join(root, "pyproject.toml"));
+  result = cli(root, "stale", "--check", "--json");
+  assert.equal(result.status, 1);
+  const entries = JSON.parse(result.stdout);
+  assert.equal(entries[0].file, "attempts.md");
+  assert.equal(entries[0].evidence[0].status, "MISSING");
+  assert.equal(cli(root, "attempt", "again", "--evidence", "pyproject.toml").status, 1);
+  assert.equal(await fs.readFile(paths.attempts, "utf8"), raw, "missing evidence must not append");
+});
+
+test("full, compact and subagent primers annotate attempts with changed evidence", async (t) => {
+  const { root, paths } = await fixture(t);
+  await attempt({ cwd: root, what: "parse with pdfminer", error: "boom", evidence: ["pyproject.toml"], quiet: true });
+  const before = await fs.readFile(paths.attempts, "utf8");
+  const render = () => Promise.all([buildPrimer(paths, "generic", Infinity), buildCompactPrimer(paths, "generic"), buildSubagentPrimer(paths, "generic")]);
+  for (const primer of await render()) assert.ok(!primer.includes(STALE_ANNOTATION));
+  await fs.appendFile(join(root, "pyproject.toml"), "version = '2'\n");
+  const [full, compact, subagent] = await render();
+  assert.ok(full!.includes("**tried:** parse with pdfminer" + STALE_ANNOTATION));
+  for (const primer of [compact!, subagent!]) assert.ok(primer.includes(STALE_ANNOTATION));
+  await fs.unlink(join(root, "pyproject.toml"));
+  for (const primer of await render()) assert.ok(primer.includes(STALE_ANNOTATION));
+  assert.equal(await fs.readFile(paths.attempts, "utf8"), before);
+});
+
+test("attempts without evidence or with OK evidence render byte-identically in every primer", async (t) => {
+  const { root, paths } = await fixture(t);
+  await attempt({ cwd: root, what: "parse with pdfminer", error: "boom", quiet: true });
+  const render = () => Promise.all([buildPrimer(paths, "generic", Infinity), buildCompactPrimer(paths, "generic"), buildSubagentPrimer(paths, "generic")]);
+  const plain = await render();
+  const raw = await fs.readFile(paths.attempts, "utf8");
+  const evidence = (await captureEvidence(root, ["pyproject.toml"]))[0]!;
+  await fs.writeFile(paths.attempts, raw.replace("**tried:** parse with pdfminer", `**tried:** parse with pdfminer\n${evidence}`));
+  const withEvidence = await render();
+  for (const [i, primer] of withEvidence.entries()) assert.equal(primer.replace(`\n${evidence}`, ""), plain[i]);
+});
+
+test("MCP attempt schema and handler accept evidence and reject invalid input", async (t) => {
+  const { root, paths } = await fixture(t);
+  const tool = TOOLS.find((tool) => tool.name === "handoff_log_attempt")!;
+  const properties = tool.inputSchema.properties as Record<string, any>;
+  assert.equal(properties.evidence.type, "array");
+  assert.deepEqual(properties.evidence.items, { type: "string" });
+  assert.ok(!(tool.inputSchema.required as string[]).includes("evidence"));
+  await tool.handler({ what: "parse with pdfminer", evidence: ["pyproject.toml"] }, { projectRoot: root, paths });
+  const before = await fs.readFile(paths.attempts, "utf8");
+  assert.match(before, /\*\*evidence:\*\* pyproject.toml@sha256:[a-f0-9]{16}/);
+  for (const evidence of ["pyproject.toml", [42], ["missing.txt"], ["../outside.txt"]]) {
+    await assert.rejects(tool.handler({ what: "x", evidence }, { projectRoot: root, paths }));
+    assert.equal(await fs.readFile(paths.attempts, "utf8"), before);
+  }
+  assert.equal((await collectEvidenceStatus(paths))[0]!.file, "attempts.md");
 });

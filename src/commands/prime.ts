@@ -244,6 +244,9 @@ export async function buildPrimer(
     const raw = await readOrEmpty(s.path);
     const annotated = s.path === paths.decisions || s.path === paths.corrections
       ? await annotateEvidence(paths.root, splitEntries(raw).filter((e) => !isSuperseded(e)).join("\n\n---\n\n"))
+      // Attempts render raw; annotateEvidence returns it untouched unless evidence is stale.
+      : s.path === paths.attempts
+        ? await annotateEvidence(paths.root, raw)
       : s.path === paths.wiki
         ? annotateWikiSources(raw, await readOrEmpty(paths.corrections))
         : raw;
@@ -692,6 +695,7 @@ export async function buildCompactPrimer(
   const attemptsRaw = await readOrEmpty(paths.attempts);
   parts.push(
     ...renderRanked(attemptsRaw, {
+      staleIds: await staleEntryIds(paths.root, attemptsRaw),
       standingTitle: "Recurring failure modes (do not retry)",
       recentTitle: "Latest failed attempts (do not repeat)",
       file: "attempts.md",
@@ -809,6 +813,7 @@ export async function buildSubagentPrimer(
   const attemptsRaw = await readOrEmpty(paths.attempts);
   parts.push(
     ...renderRanked(attemptsRaw, {
+      staleIds: await staleEntryIds(paths.root, attemptsRaw),
       standingTitle: "Recurring failure modes (do not retry)",
       recentTitle: "Latest failed attempts (do not repeat)",
       file: "attempts.md",
