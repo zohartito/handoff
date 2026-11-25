@@ -240,6 +240,62 @@ test("doctor: produces the expected section headers", async () => {
   }
 });
 
+// --- git tracking end-to-end ---------------------------------------------
+
+for (const state of ["git-ignored", "tracked", "untracked", "non-git", "tracked-but-ignored", "staged"] as const) {
+  test(`doctor git tracking: ${state}`, async () => {
+    const dir = makeTmpDir();
+    try {
+      await quietInit(dir);
+      if (state !== "non-git") gitInit(dir);
+      const tracked = state === "tracked" || state === "tracked-but-ignored" || state === "staged";
+      if (tracked) {
+        execFileSync("git", ["add", "--", ".handoff/"], { cwd: dir, stdio: "ignore" });
+        if (state !== "staged") {
+          execFileSync("git", ["commit", "-q", "-m", "record session state"], { cwd: dir, stdio: "ignore" });
+        }
+      }
+      if (state === "git-ignored" || state === "tracked-but-ignored") {
+        writeFileSync(join(dir, ".gitignore"), ".handoff/\n", "utf8");
+      }
+
+      process.exitCode = 0;
+      const out = await captureStdout(() => doctor({ cwd: dir }));
+      const section = out.slice(out.indexOf("## git"), out.indexOf("## staleness"));
+      if (state === "non-git") {
+        assert.match(section, /not a git repo/);
+        assert.doesNotMatch(section, /○ warn|\.handoff\//);
+      } else if (tracked) {
+        assert.match(section, /● ok\s+\.handoff\/ is tracked by git/);
+        assert.doesNotMatch(section, /○ warn/);
+      } else {
+        assert.match(section, new RegExp(`○ warn\\s+\\.handoff/ is ${state}`));
+        assert.match(section, /session state will not survive a fresh clone/);
+        assert.match(section, /intentional/);
+      }
+      assert.equal(process.exitCode, 0, "tracking checks must be advisory, not errors");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+      process.exitCode = 0;
+    }
+  });
+}
+
+test("doctor git tracking: missing .handoff/ does not add a tracking warning", async () => {
+  const dir = makeTmpDir();
+  try {
+    gitInit(dir);
+    const out = await captureStdout(() => doctor({ cwd: dir }));
+    const section = out.slice(out.indexOf("## git"), out.indexOf("## staleness"));
+    assert.doesNotMatch(section, /○ warn|\.handoff\//);
+    assert.match(out, /\.handoff\/ missing/);
+    assert.equal(process.exitCode, 1, "the existing missing-directory error must remain");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+    process.exitCode = 0;
+  }
+});
+
 // --- extractVersions / cmpSemver: pure units ------------------------------
 
 test("extractVersions: matches three-part versions, excludes dates/counts/times/two-part", () => {
