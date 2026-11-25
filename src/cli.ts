@@ -394,6 +394,7 @@ program
   .option("--strategy <name>", "run a single strategy (recurrence | recency)")
   .option("--compare", "run every strategy side by side with the per-metric winner")
   .option("--sweep", "sweep PROMOTION_THRESHOLD (2..6) and report F1 for each")
+  .option("--primer", "check labelled entries survive the real compact/subagent primer text")
   .option("--json", "emit machine-readable JSON instead of a table")
   .option("--k <n>", "retrieval cutoff, overriding each scenario's own k", (v) => parseInt(v, 10))
   .option("--dir <path>", "eval fixtures directory (default: tests/fixtures/eval)")
@@ -402,6 +403,7 @@ program
       strategy: opts.strategy,
       compare: !!opts.compare,
       sweep: !!opts.sweep,
+      primer: !!opts.primer,
       json: !!opts.json,
       k: Number.isFinite(opts.k) ? opts.k : undefined,
       dir: opts.dir,

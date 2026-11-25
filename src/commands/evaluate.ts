@@ -1,13 +1,21 @@
-import { readFile, readdir } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { exists, readOrEmpty } from "../util/fs.js";
+import { resolveHandoffPaths } from "../format/paths.js";
+import { computeHandoverRecord, type HandoverVariant } from "../format/handover.js";
+import { extractConstraints } from "../format/constraints.js";
 import {
   rankEntries,
   splitEntries,
   entryId,
+  condenseEntry,
+  truncateLine,
+  isSuperseded,
   PROMOTION_THRESHOLD,
 } from "./ranking.js";
 import { retrieveForTask } from "./retrieval.js";
+import { buildCompactPrimer, buildSubagentPrimer } from "./prime.js";
 
 /**
  * `handoff evaluate` — a deterministic RETRIEVAL eval for the ranking.
@@ -340,6 +348,129 @@ export function runSweep(
 }
 
 // ---------------------------------------------------------------------------
+// Primer preservation — did labelled evidence survive the REAL primer text?
+// ---------------------------------------------------------------------------
+//
+// Retrieval scores ids; a primer can still lose an entry after selection
+// (clampEntry, shedToBudget, the hard truncate). This mode renders the shipped
+// compact/subagent primers per scenario and checks the text itself, then
+// compares the observed loss with computeHandoverRecord's predicted residual.
+
+export type Preservation = "verbatim" | "standing" | "truncated" | "missing";
+
+/**
+ * Verbatim = full text present; standing = its condensed standing-rule line or
+ * its verbatim user-constraint line present; truncated = header only.
+ */
+export function classifyPreservation(primer: string, entryText: string): Preservation {
+  if (primer.includes(entryText)) return "verbatim";
+  const lines = [truncateLine(condenseEntry(entryText)), ...extractConstraints(entryText).map((c) => `- ${c.text}`)];
+  if (lines.some((l) => l && primer.includes(l))) return "standing";
+  const header = entryText.split("\n", 1)[0]!.trim();
+  if (header.startsWith("## ") && primer.includes(header)) return "truncated";
+  return "missing";
+}
+
+export interface PrimerVariantResult {
+  chars: number;
+  /** Classification of each labelled-relevant id. */
+  relevant: Record<string, Preservation>;
+  /** Kept (verbatim or standing) / relevant; 1 when nothing is relevant. */
+  recall: number;
+  /** Every relevant entry kept. */
+  allRec: boolean;
+  /** Corpus entries observed missing from the primer text. */
+  observedDropped: number;
+  /** computeHandoverRecord(...).loss.entriesDropped — the predicted residual. */
+  predictedDropped: number;
+  /** observedDropped - predictedDropped (> 0: the record under-counts loss). */
+  gap: number;
+}
+
+export interface PrimerScenarioResult {
+  scenario: string;
+  compact: PrimerVariantResult;
+  subagent: PrimerVariantResult;
+}
+
+const PRIMER_VARIANTS = { compact: buildCompactPrimer, subagent: buildSubagentPrimer } as const;
+
+export async function evaluatePrimerScenario(s: Scenario): Promise<PrimerScenarioResult> {
+  const root = await mkdtemp(join(tmpdir(), "handoff-eval-primer-"));
+  try {
+    await mkdir(join(root, ".handoff"));
+    const paths = resolveHandoffPaths(root);
+    await writeFile(paths.task, s.task + "\n");
+    await writeFile(paths.corrections, s.corpus.corrections);
+    await writeFile(paths.attempts, s.corpus.attempts);
+
+    const out = {} as Record<HandoverVariant, PrimerVariantResult>;
+    for (const variant of ["compact", "subagent"] as const) {
+      const primer = await PRIMER_VARIANTS[variant](paths, "generic");
+      const relevant: Record<string, Preservation> = {};
+      for (const e of s.corpus.entries) {
+        if (s.relevant.has(e.id)) relevant[e.id] = classifyPreservation(primer, e.text);
+      }
+      const kept = Object.values(relevant).filter((p) => p === "verbatim" || p === "standing").length;
+      const observedDropped = s.corpus.entries.filter(
+        (e) => !isSuperseded(e.text) && classifyPreservation(primer, e.text) === "missing",
+      ).length;
+      const predictedDropped = (await computeHandoverRecord(paths, variant)).loss.entriesDropped;
+      out[variant] = {
+        chars: primer.length,
+        relevant,
+        recall: s.relevant.size === 0 ? 1 : kept / s.relevant.size,
+        allRec: kept === s.relevant.size,
+        observedDropped,
+        predictedDropped,
+        gap: observedDropped - predictedDropped,
+      };
+    }
+    return { scenario: s.name, ...out };
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+}
+
+export interface PrimerMacro {
+  recall: number;
+  allRec: number;
+  gap: number;
+}
+
+export function primerMacro(results: PrimerScenarioResult[], variant: HandoverVariant): PrimerMacro {
+  const n = Math.max(results.length, 1);
+  const sum = (f: (r: PrimerVariantResult) => number): number =>
+    results.reduce((a, r) => a + f(r[variant]), 0) / n;
+  return { recall: sum((r) => r.recall), allRec: sum((r) => (r.allRec ? 1 : 0)), gap: sum((r) => r.gap) };
+}
+
+function renderPrimerReport(results: PrimerScenarioResult[]): void {
+  const nameW = Math.max(8, ...results.map((r) => r.scenario.length));
+  console.log(`# handoff evaluate --primer  (${results.length} scenarios, real compact/subagent primers)\n`);
+  for (const variant of ["compact", "subagent"] as const) {
+    console.log(`## ${variant}\n`);
+    console.log(
+      `${pad("scenario", nameW)}  ${padLeft("verb", 4)} ${padLeft("std", 4)} ${padLeft("trunc", 5)} ${padLeft("miss", 4)}  ${padLeft("rec", 6)}  allRec  ${padLeft("drop", 4)} ${padLeft("pred", 4)} ${padLeft("gap", 4)}`,
+    );
+    for (const r of results) {
+      const v = r[variant];
+      const count = (p: Preservation) => String(Object.values(v.relevant).filter((x) => x === p).length);
+      console.log(
+        `${pad(r.scenario, nameW)}  ${padLeft(count("verbatim"), 4)} ${padLeft(count("standing"), 4)} ${padLeft(count("truncated"), 5)} ${padLeft(count("missing"), 4)}  ${padLeft(fmt(v.recall), 6)}  ${pad(v.allRec ? "yes" : "no", 6)}  ${padLeft(String(v.observedDropped), 4)} ${padLeft(String(v.predictedDropped), 4)} ${padLeft(String(v.gap), 4)}`,
+      );
+    }
+    const m = primerMacro(results, variant);
+    console.log(`MACRO: recall ${fmt(m.recall)} · All-Rec ${fmt(m.allRec)} · mean gap to predicted residual ${fmt(m.gap)} entries\n`);
+  }
+  console.log(
+    "verb/std/trunc/miss classify labelled-relevant entries in the rendered primer text.\n" +
+      "drop = corpus entries absent from the primer; pred = computeHandoverRecord residual;\n" +
+      "gap > 0 means the record under-counts what the primer actually lost.",
+  );
+}
+
+// ---------------------------------------------------------------------------
 // CLI
 // ---------------------------------------------------------------------------
 
@@ -348,6 +479,7 @@ export interface EvaluateOpts {
   compare?: boolean;
   json?: boolean;
   sweep?: boolean;
+  primer?: boolean;
   k?: number;
   dir?: string;
   cwd?: string;
@@ -386,6 +518,18 @@ export async function evaluate(opts: EvaluateOpts = {}): Promise<void> {
       `evaluate: unknown strategy "${opts.strategy}" (known: ${Object.keys(STRATEGIES).join(", ")})`,
     );
     process.exitCode = 1;
+    return;
+  }
+
+  if (opts.primer) {
+    const results: PrimerScenarioResult[] = [];
+    for (const s of scenarios) results.push(await evaluatePrimerScenario(s));
+    if (opts.json) {
+      const macro = { compact: primerMacro(results, "compact"), subagent: primerMacro(results, "subagent") };
+      console.log(JSON.stringify({ mode: "primer", scenarios: results.length, results, macro }, null, 2));
+      return;
+    }
+    renderPrimerReport(results);
     return;
   }
 

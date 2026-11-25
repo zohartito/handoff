@@ -206,6 +206,7 @@ Developer tool that makes the relevance-ranking thresholds decidable by measurem
 handoff evaluate                 # score the shipped selection strategy, per scenario
 handoff evaluate --compare       # shipped, recurrence, relevance and recency, side by side
 handoff evaluate --sweep         # sweep PROMOTION_THRESHOLD 2..6 and report F1 for each
+handoff evaluate --primer        # do labelled entries survive the real compact/subagent primer text?
 handoff evaluate --json          # machine-readable output
 ```
 
