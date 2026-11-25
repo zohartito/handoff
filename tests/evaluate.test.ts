@@ -191,6 +191,7 @@ test("HOF-14: default evaluation names shipped selection and its delivery limits
   assert.match(result.caveat, /task relevance/);
   assert.match(result.caveat, /budgeted primer/);
   assert.doesNotMatch(result.caveat, /shipping ranker is task-blind/);
+});
 
 // ---------------------------------------------------------------------------
 // --primer: preservation in the REAL compact/subagent primer text
