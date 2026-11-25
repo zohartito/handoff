@@ -10,6 +10,8 @@ Portable session-state CLI for AI coding tools. When you switch mid-task between
 - First-run walkthrough: `npm run build && node scripts/first-run-walkthrough.mjs`.
   Runs in a temporary repo and compares the current build with the recorded
   baseline in `docs/first-run-before.json`; see `docs/first-run-walkthrough.md`.
+  Exits 1 if the first prime after `init` (which runs `save()`) lacks observed
+  cwd/branch/commit/`.handoff/` status facts or has fewer than three fact lines.
 
 ## Self-improving loop (close the loop)
 After installing declared dependencies with `npm ci`, verify locally before committing:

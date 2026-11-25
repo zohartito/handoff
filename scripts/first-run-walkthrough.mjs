@@ -67,6 +67,13 @@ function primerMetrics(output) {
     boilerplateLines: lines.length - factLines.length - blankLines,
     blankLines,
     factLines,
+    // Checked on raw output: the exact observed values must reach the primer.
+    requiredFacts: {
+      cwd: output.includes(`- cwd: \`${repo}\``),
+      "main branch": output.includes("- git branch: `main`"),
+      "commit subject": output.includes(commitSubject),
+      ".handoff/ status": lines.some((line) => /^\?\? \.handoff\/$/.test(line)),
+    },
   };
 }
 
@@ -143,5 +150,15 @@ console.log(`\nJSON receipt: ${reportPath}`);
 // exists, following the repaired hint must succeed too.
 if (steps.some((entry) => entry.step !== "positional-prime"
   && (entry.step !== "printed-hint" || before) && entry.exitCode !== 0)) {
+  process.exitCode = 1;
+}
+// init→prime with no explicit save must already carry observed project facts.
+const primeMetrics = steps.find((entry) => entry.step === "prime").primer;
+const missing = primeMetrics
+  ? Object.entries(primeMetrics.requiredFacts).filter(([, ok]) => !ok).map(([name]) => name)
+  : ["(prime failed)"];
+const factCount = primeMetrics?.projectFactLines ?? 0;
+if (missing.length || factCount < 3) {
+  console.error(`first prime lacks required facts: missing [${missing.join(", ")}], ${factCount} project-fact lines (need >= 3)`);
   process.exitCode = 1;
 }
