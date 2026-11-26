@@ -721,7 +721,9 @@ export async function buildCompactPrimer(
 /**
  * Extract os / node / git-branch from environment.md into a single line.
  * The saved section uses `- key: value`; also accept legacy bold labels. Pick a
- * few high-signal keys and format as `os: linux | node: 22.11.0 | branch: main`.
+ * few high-signal keys and format as `os: linux | node: 22.11.0 | branch: main`,
+ * plus `head: <short sha> | dirty: N` when `save` recorded them, so the next
+ * agent can tell exactly which commit (and how much uncommitted work) it resumes.
  * Falls back to "" if nothing recognizable is found.
  */
 function extractEnvOneLine(raw: string): string {
@@ -730,19 +732,26 @@ function extractEnvOneLine(raw: string): string {
   const pick = (label: RegExp): string | null => {
     for (const line of lines) {
       const m = line.match(/^\s*[-*]\s*(?:\*\*([^*]+)\*\*:?\s*|([^:]+):\s*)(.+?)\s*$/);
-      if (m && label.test(m[1] ?? m[2])) return m[3];
+      if (m && label.test(m[1] ?? m[2])) return m[3].replace(/`/g, "");
     }
     return null;
   };
 
   const os = pick(/^(os|platform|operating system)/i);
   const node = pick(/^(node|node\.?js|runtime)/i);
-  const branch = pick(/^(git branch|branch|git)/i);
+  // Anchored so `git head` is not mistaken for the branch.
+  const branch = pick(/^(git branch|branch|git)\s*:?$/i);
+  const head = pick(/^(git head|head|commit)\s*:?$/i);
+  // `save` writes `git status --short` into a fenced block; one line per change.
+  const status = raw.match(/^### git status\s*\n+```\n([\s\S]*?)\n```/m);
+  const dirty = status ? status[1].split("\n").filter((l) => l.trim()).length : 0;
 
   const parts: string[] = [];
   if (os) parts.push(`os: ${os}`);
   if (node) parts.push(`node: ${node}`);
   if (branch) parts.push(`branch: ${branch}`);
+  if (head) parts.push(`head: ${/^[0-9a-f]{40,64}$/i.test(head) ? head.slice(0, 12) : head}`);
+  if (dirty > 0) parts.push(`dirty: ${dirty}`);
   return parts.join(" | ");
 }
 

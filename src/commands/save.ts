@@ -34,6 +34,7 @@ export async function save(opts: { cwd?: string } = {}): Promise<void> {
     `- node: ${process.version}`,
     `- cwd: \`${cwd}\``,
     git ? `- git branch: \`${git.branch ?? "(detached)"}\`` : `- git: (not a repo)`,
+    git && git.head ? `- git head: \`${git.head}\`` : null,
     git && git.status ? `\n### git status\n\n\`\`\`\n${git.status}\n\`\`\`` : null,
     git && git.lastCommits
       ? `\n### recent commits\n\n\`\`\`\n${git.lastCommits}\n\`\`\``
