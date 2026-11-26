@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, existsSync, readFileSync } from "node:fs";
+import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
@@ -102,6 +102,36 @@ test("HOF-17: real save output appears in the compact environment summary", asyn
   assert.match(output, /## Environment/);
   assert.ok(output.includes(`node: ${process.version}`));
   assert.match(output, /os: /);
+});
+
+test("save in a git repo: compact primer carries the exact HEAD sha and dirty count", async () => {
+  const { save } = await import("../src/commands/save.js");
+  const { buildCompactPrimer } = await import("../src/commands/prime.js");
+  const root = makeTmpDir();
+  try {
+    const git = (...args: string[]) => execFileSync("git", [
+      "-c", "user.email=t@t.test", "-c", "user.name=Test", "-c", "commit.gpgsign=false", ...args,
+    ], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+    git("init", "-q");
+    writeFileSync(join(root, "README.md"), "one\n");
+    git("add", "README.md");
+    git("commit", "-q", "-m", "first");
+    const sha = git("rev-parse", "HEAD");
+    await quiet(() => init({ cwd: root }));
+    writeFileSync(join(root, "README.md"), "two\n");
+    await quiet(() => save({ cwd: root }));
+
+    const env = readFileSync(resolveHandoffPaths(root).environment, "utf8");
+    assert.ok(env.includes(`- git head: \`${sha}\``), "save must record the full HEAD sha");
+    const output = await buildCompactPrimer(resolveHandoffPaths(root), "generic");
+    const line = output.slice(output.indexOf("## Environment")).split("\n")[2] ?? "";
+    assert.match(line, /os: .+\| node: .+\| branch: [^`|]+ \|/);
+    assert.ok(line.includes(`head: ${sha.slice(0, 12)}`), line);
+    // ` M README.md` and `?? .handoff/`
+    assert.match(line, /dirty: 2$/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("HOF-18: status distinguishes templates seeds and saved environment", async () => {

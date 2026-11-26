@@ -71,8 +71,10 @@ export async function collectGitState(cwd: string) {
   const isRepo = (await tryGit(["rev-parse", "--is-inside-work-tree"], cwd)) === "true";
   if (!isRepo) return null;
 
-  const [branch, status, lastCommits, diffStat] = await Promise.all([
+  const [branch, head, status, lastCommits, diffStat] = await Promise.all([
     tryGit(["branch", "--show-current"], cwd),
+    // Exact commit the saved state corresponds to; null before the first commit.
+    tryGit(["rev-parse", "HEAD"], cwd),
     tryGit(["status", "--short"], cwd),
     tryGit(["log", "-5", "--oneline"], cwd),
     tryGit(["diff", "--stat"], cwd),
@@ -80,6 +82,7 @@ export async function collectGitState(cwd: string) {
 
   return {
     branch: branch ?? null,
+    head: head || null,
     status: status ?? "",
     lastCommits: lastCommits ?? "",
     diffStat: diffStat ?? "",
