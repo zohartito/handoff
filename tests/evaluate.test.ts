@@ -18,9 +18,11 @@ import {
   classifyPreservation,
   evaluatePrimerScenario,
   primerMacro,
+  PRIMER_MODES,
   type Scenario,
 } from "../src/commands/evaluate.js";
 import { PROMOTION_THRESHOLD, entryId } from "../src/commands/ranking.js";
+import { SESSION_START_BUDGET } from "../src/commands/prime.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 // `here` at runtime is dist-test/tests/ — fixtures live next to the source.
@@ -241,6 +243,62 @@ test("primer mode: shedToBudget drops entries the handover record counted as car
     assert.equal(r.compact.relevant["2026-03-03T00:00:00Z"], "missing");
     assert.equal(r.compact.allRec, false);
     assert.ok(r.compact.gap > 0, `expected positive gap, got ${r.compact.gap}`);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("primer mode: 27 deterministic scenario/mode rows, each within its mode budget", async () => {
+  const scenarios = await loadScenarios(EVAL_DIR);
+  const run = async () => {
+    const out = [];
+    for (const s of scenarios) out.push(await evaluatePrimerScenario(s));
+    return out;
+  };
+  const results = await run();
+  assert.equal(scenarios.length, 9);
+  assert.deepEqual(PRIMER_MODES, ["session", "compact", "subagent"]);
+  let rows = 0;
+  for (const r of results) {
+    for (const mode of PRIMER_MODES) {
+      const v = r[mode];
+      assert.ok(v.chars <= v.budget, `${r.scenario}/${mode}: ${v.chars} > ${v.budget}`);
+      rows++;
+    }
+  }
+  assert.equal(rows, 27);
+  assert.equal(results[0]!.session.budget, SESSION_START_BUDGET);
+  assert.deepEqual(await run(), results, "re-running must give identical rows");
+  // A relevant correction carried only as a condensed standing line keeps
+  // `rec` credit but earns no full-entry credit.
+  const stale = results.find((r) => r.scenario === "stale-security")!;
+  approx(stale.compact.recall, 1, "standing line counts as kept");
+  approx(stale.compact.completeRecall, 0, "standing line is not a complete entry");
+  approx(stale.session.completeRecall, 1, "the SessionStart primer carries it in full");
+});
+
+test("primer mode: SessionStart budget loss is observed, clips rules, and the record misses it", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "handoff-eval-session-"));
+  const pad = "always route the export job through the validated staging queue first ".repeat(10);
+  const corrections = Array.from({ length: 14 }, (_, i) =>
+    `## 2026-04-${String(i + 1).padStart(2, "0")}T00:00:00Z\n\n**agent did:** step ${i}\n\n**user said:** rule ${i}: ${pad}\n`).join("\n");
+  writeFileSync(join(dir, "task.md"), "Fix the exporter.\n");
+  writeFileSync(join(dir, "corrections.md"), corrections);
+  writeFileSync(join(dir, "labels.json"), JSON.stringify({ relevant: ["2026-04-08T00:00:00Z", "2026-04-10T00:00:00Z"], k: 5 }));
+  try {
+    const r = await evaluatePrimerScenario(await loadScenario(dir));
+    const v = r.session;
+    assert.ok(v.chars <= SESSION_START_BUDGET, `session primer ${v.chars} chars exceeds its budget`);
+    assert.ok(v.complete.length < 14, "the 9000-char truncate must remove complete entries");
+    // 08 is cut mid-entry (header survives), 10 falls in the removed middle.
+    assert.equal(v.relevant["2026-04-08T00:00:00Z"], "truncated");
+    assert.equal(v.relevant["2026-04-10T00:00:00Z"], "missing");
+    assert.ok(!v.complete.includes("2026-04-08T00:00:00Z"), "a clipped entry earns no full credit");
+    approx(v.completeRecall, 0, "neither relevant entry survives complete");
+    assert.equal(v.allRec, false);
+    assert.ok(v.constraints.kept < v.constraints.total, "clipped rules must show as constraint loss");
+    assert.equal(v.predictedDropped, 0);
+    assert.ok(v.gap > 0, `expected positive gap, got ${v.gap}`);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
