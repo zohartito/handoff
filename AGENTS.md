@@ -36,9 +36,11 @@ Review the diff and commit only after these repository-local checks pass.
     (the checks above) — it guards ranking/metric drift when no PR is open.
 
 ## Primer preservation eval
-`handoff evaluate --primer` renders the real compact/subagent primers per `tests/fixtures/eval`
-scenario and classifies each labelled-relevant entry as verbatim / standing (condensed or
+`handoff evaluate --primer` renders the real SessionStart (`buildPrimer`, `SESSION_START_BUDGET`
+shared with hook.ts), compact and subagent primers per `tests/fixtures/eval` scenario (9 × 3 rows)
+and classifies each labelled-relevant entry as verbatim / standing (condensed or
 constraint line) / truncated / missing, with All-Rec and the gap to `computeHandoverRecord`'s residual.
+It also reports conservative full-entry precision/recall (complete text only) and exact constraint retention.
 
 ## Log lifecycle (append → compact → archive)
 The log files (`attempts.md`, `corrections.md`, `decisions.md`) are append-only, so they

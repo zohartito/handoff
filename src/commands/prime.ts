@@ -86,6 +86,9 @@ export const COMPACT_THRESHOLD = 2000;
  */
 export const SUBAGENT_BUDGET = 1900;
 
+/** Full-primer budget the SessionStart hook injects (hook.ts); `evaluate --primer` measures it. */
+export const SESSION_START_BUDGET = 9000;
+
 /**
  * Trust boundary for the sections that follow.
  *

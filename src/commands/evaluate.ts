@@ -4,7 +4,7 @@ import { basename, join, resolve } from "node:path";
 import { exists, readOrEmpty } from "../util/fs.js";
 import { resolveHandoffPaths } from "../format/paths.js";
 import { computeHandoverRecord, type HandoverVariant } from "../format/handover.js";
-import { extractConstraints } from "../format/constraints.js";
+import { extractConstraints, verifyConstraintsPreserved } from "../format/constraints.js";
 import {
   rankEntries,
   splitEntries,
@@ -15,7 +15,14 @@ import {
   PROMOTION_THRESHOLD,
 } from "./ranking.js";
 import { retrieveForTask } from "./retrieval.js";
-import { buildCompactPrimer, buildSubagentPrimer } from "./prime.js";
+import {
+  buildPrimer,
+  buildCompactPrimer,
+  buildSubagentPrimer,
+  COMPACT_THRESHOLD,
+  SUBAGENT_BUDGET,
+  SESSION_START_BUDGET,
+} from "./prime.js";
 
 /**
  * `handoff evaluate` — a deterministic RETRIEVAL eval for the ranking.
@@ -353,7 +360,8 @@ export function runSweep(
 //
 // Retrieval scores ids; a primer can still lose an entry after selection
 // (clampEntry, shedToBudget, the hard truncate). This mode renders the shipped
-// compact/subagent primers per scenario and checks the text itself, then
+// SessionStart (full, 9000-char), compact and subagent primers per scenario and
+// checks the text itself, then
 // compares the observed loss with computeHandoverRecord's predicted residual.
 
 export type Preservation = "verbatim" | "standing" | "truncated" | "missing";
@@ -373,6 +381,18 @@ export function classifyPreservation(primer: string, entryText: string): Preserv
 
 export interface PrimerVariantResult {
   chars: number;
+  /** The mode's character budget; `chars <= budget` must hold. */
+  budget: number;
+  /**
+   * Conservative full-entry credit: ids whose COMPLETE entry text is in the
+   * primer. Headers, pointers and condensed theme lines never count.
+   */
+  complete: string[];
+  /** computeMetrics(complete, relevant) precision / recall. */
+  completePrecision: number;
+  completeRecall: number;
+  /** Exact user-constraint lines (extractConstraints) found verbatim in the primer. */
+  constraints: { kept: number; total: number };
   /** Classification of each labelled-relevant id. */
   relevant: Record<string, Preservation>;
   /** Kept (verbatim or standing) / relevant; 1 when nothing is relevant. */
@@ -387,13 +407,23 @@ export interface PrimerVariantResult {
   gap: number;
 }
 
+/** `session` = the full primer the SessionStart hook injects. */
+export type PrimerVariant = "session" | HandoverVariant;
+export const PRIMER_MODES: readonly PrimerVariant[] = ["session", "compact", "subagent"];
+
 export interface PrimerScenarioResult {
   scenario: string;
+  session: PrimerVariantResult;
   compact: PrimerVariantResult;
   subagent: PrimerVariantResult;
 }
 
-const PRIMER_VARIANTS = { compact: buildCompactPrimer, subagent: buildSubagentPrimer } as const;
+/** The same builder calls the shipped call sites make (hook.ts SessionStart; prime --compact/--subagent). */
+const PRIMER_VARIANTS: Record<PrimerVariant, { budget: number; build: (p: ReturnType<typeof resolveHandoffPaths>) => Promise<string> }> = {
+  session: { budget: SESSION_START_BUDGET, build: (p) => buildPrimer(p, "claude-code", SESSION_START_BUDGET) },
+  compact: { budget: COMPACT_THRESHOLD, build: (p) => buildCompactPrimer(p, "generic") },
+  subagent: { budget: SUBAGENT_BUDGET, build: (p) => buildSubagentPrimer(p, "generic") },
+};
 
 export async function evaluatePrimerScenario(s: Scenario): Promise<PrimerScenarioResult> {
   const root = await mkdtemp(join(tmpdir(), "handoff-eval-primer-"));
@@ -404,20 +434,33 @@ export async function evaluatePrimerScenario(s: Scenario): Promise<PrimerScenari
     await writeFile(paths.corrections, s.corpus.corrections);
     await writeFile(paths.attempts, s.corpus.attempts);
 
-    const out = {} as Record<HandoverVariant, PrimerVariantResult>;
-    for (const variant of ["compact", "subagent"] as const) {
-      const primer = await PRIMER_VARIANTS[variant](paths, "generic");
+    const constraints = extractConstraints(s.corpus.corrections);
+    const out = {} as Record<PrimerVariant, PrimerVariantResult>;
+    for (const variant of PRIMER_MODES) {
+      const { budget, build } = PRIMER_VARIANTS[variant];
+      const primer = await build(paths);
       const relevant: Record<string, Preservation> = {};
       for (const e of s.corpus.entries) {
         if (s.relevant.has(e.id)) relevant[e.id] = classifyPreservation(primer, e.text);
       }
       const kept = Object.values(relevant).filter((p) => p === "verbatim" || p === "standing").length;
-      const observedDropped = s.corpus.entries.filter(
-        (e) => !isSuperseded(e.text) && classifyPreservation(primer, e.text) === "missing",
-      ).length;
-      const predictedDropped = (await computeHandoverRecord(paths, variant)).loss.entriesDropped;
+      const live = s.corpus.entries.filter((e) => !isSuperseded(e.text));
+      const complete = live.filter((e) => primer.includes(e.text)).map((e) => e.id);
+      const full = computeMetrics(complete, s.relevant);
+      const observedDropped = live.filter((e) => classifyPreservation(primer, e.text) === "missing").length;
+      // The full primer has no ranking-stage cap, so the record predicts no loss for it.
+      const predictedDropped =
+        variant === "session" ? 0 : (await computeHandoverRecord(paths, variant)).loss.entriesDropped;
       out[variant] = {
         chars: primer.length,
+        budget,
+        complete,
+        completePrecision: full.precision,
+        completeRecall: full.recall,
+        constraints: {
+          kept: constraints.length - verifyConstraintsPreserved(primer, constraints).missing.length,
+          total: constraints.length,
+        },
         relevant,
         recall: s.relevant.size === 0 ? 1 : kept / s.relevant.size,
         allRec: kept === s.relevant.size,
@@ -436,37 +479,59 @@ export interface PrimerMacro {
   recall: number;
   allRec: number;
   gap: number;
+  completePrecision: number;
+  completeRecall: number;
+  /** Fraction of scenarios whose every exact constraint line survived. */
+  constraintsAll: number;
 }
 
-export function primerMacro(results: PrimerScenarioResult[], variant: HandoverVariant): PrimerMacro {
+export function primerMacro(results: PrimerScenarioResult[], variant: PrimerVariant): PrimerMacro {
   const n = Math.max(results.length, 1);
   const sum = (f: (r: PrimerVariantResult) => number): number =>
     results.reduce((a, r) => a + f(r[variant]), 0) / n;
-  return { recall: sum((r) => r.recall), allRec: sum((r) => (r.allRec ? 1 : 0)), gap: sum((r) => r.gap) };
+  return {
+    recall: sum((r) => r.recall),
+    allRec: sum((r) => (r.allRec ? 1 : 0)),
+    gap: sum((r) => r.gap),
+    completePrecision: sum((r) => r.completePrecision),
+    completeRecall: sum((r) => r.completeRecall),
+    constraintsAll: sum((r) => (r.constraints.kept === r.constraints.total ? 1 : 0)),
+  };
 }
+
+export const PRIMER_CAVEAT =
+  "full-P/full-R credit an entry only when its COMPLETE text is in the rendered primer; headers,\n" +
+  "pointers and condensed theme lines score zero, so a primer that carries a rule as a standing\n" +
+  "line is under-credited here (see rec, which counts it). cons = exact user-constraint lines kept.\n" +
+  "This measures text retention on these fixtures, not whether an agent reads or obeys the primer.";
 
 function renderPrimerReport(results: PrimerScenarioResult[]): void {
   const nameW = Math.max(8, ...results.map((r) => r.scenario.length));
-  console.log(`# handoff evaluate --primer  (${results.length} scenarios, real compact/subagent primers)\n`);
-  for (const variant of ["compact", "subagent"] as const) {
-    console.log(`## ${variant}\n`);
+  console.log(`# handoff evaluate --primer  (${results.length} scenarios × ${PRIMER_MODES.length} modes, real SessionStart/compact/subagent primers)\n`);
+  for (const variant of PRIMER_MODES) {
+    console.log(`## ${variant}  (budget ${PRIMER_VARIANTS[variant].budget} chars)\n`);
     console.log(
-      `${pad("scenario", nameW)}  ${padLeft("verb", 4)} ${padLeft("std", 4)} ${padLeft("trunc", 5)} ${padLeft("miss", 4)}  ${padLeft("rec", 6)}  allRec  ${padLeft("drop", 4)} ${padLeft("pred", 4)} ${padLeft("gap", 4)}`,
+      `${pad("scenario", nameW)}  ${padLeft("chars", 5)}  ${padLeft("verb", 4)} ${padLeft("std", 4)} ${padLeft("trunc", 5)} ${padLeft("miss", 4)}  ${padLeft("rec", 6)}  allRec  ${padLeft("full-P", 6)} ${padLeft("full-R", 6)}  ${padLeft("cons", 5)}  ${padLeft("drop", 4)} ${padLeft("pred", 4)} ${padLeft("gap", 4)}`,
     );
     for (const r of results) {
       const v = r[variant];
       const count = (p: Preservation) => String(Object.values(v.relevant).filter((x) => x === p).length);
       console.log(
-        `${pad(r.scenario, nameW)}  ${padLeft(count("verbatim"), 4)} ${padLeft(count("standing"), 4)} ${padLeft(count("truncated"), 5)} ${padLeft(count("missing"), 4)}  ${padLeft(fmt(v.recall), 6)}  ${pad(v.allRec ? "yes" : "no", 6)}  ${padLeft(String(v.observedDropped), 4)} ${padLeft(String(v.predictedDropped), 4)} ${padLeft(String(v.gap), 4)}`,
+        `${pad(r.scenario, nameW)}  ${padLeft(String(v.chars), 5)}  ${padLeft(count("verbatim"), 4)} ${padLeft(count("standing"), 4)} ${padLeft(count("truncated"), 5)} ${padLeft(count("missing"), 4)}  ${padLeft(fmt(v.recall), 6)}  ${pad(v.allRec ? "yes" : "no", 6)}  ${padLeft(fmt(v.completePrecision), 6)} ${padLeft(fmt(v.completeRecall), 6)}  ${padLeft(`${v.constraints.kept}/${v.constraints.total}`, 5)}  ${padLeft(String(v.observedDropped), 4)} ${padLeft(String(v.predictedDropped), 4)} ${padLeft(String(v.gap), 4)}`,
       );
     }
     const m = primerMacro(results, variant);
-    console.log(`MACRO: recall ${fmt(m.recall)} · All-Rec ${fmt(m.allRec)} · mean gap to predicted residual ${fmt(m.gap)} entries\n`);
+    console.log(
+      `MACRO: recall ${fmt(m.recall)} · All-Rec ${fmt(m.allRec)} · full-P ${fmt(m.completePrecision)} · full-R ${fmt(m.completeRecall)} · ` +
+        `all constraints kept ${fmt(m.constraintsAll)} · mean gap to predicted residual ${fmt(m.gap)} entries\n`,
+    );
   }
   console.log(
     "verb/std/trunc/miss classify labelled-relevant entries in the rendered primer text.\n" +
-      "drop = corpus entries absent from the primer; pred = computeHandoverRecord residual;\n" +
-      "gap > 0 means the record under-counts what the primer actually lost.",
+      "drop = corpus entries absent from the primer; pred = computeHandoverRecord residual\n" +
+      "(0 for session: the full primer has no ranking-stage cap);\n" +
+      "gap > 0 means the record under-counts what the primer actually lost.\n" +
+      PRIMER_CAVEAT,
   );
 }
 
@@ -525,8 +590,11 @@ export async function evaluate(opts: EvaluateOpts = {}): Promise<void> {
     const results: PrimerScenarioResult[] = [];
     for (const s of scenarios) results.push(await evaluatePrimerScenario(s));
     if (opts.json) {
-      const macro = { compact: primerMacro(results, "compact"), subagent: primerMacro(results, "subagent") };
-      console.log(JSON.stringify({ mode: "primer", scenarios: results.length, results, macro }, null, 2));
+      const macro = Object.fromEntries(PRIMER_MODES.map((v) => [v, primerMacro(results, v)]));
+      const budgets = Object.fromEntries(PRIMER_MODES.map((v) => [v, PRIMER_VARIANTS[v].budget]));
+      console.log(
+        JSON.stringify({ mode: "primer", scenarios: results.length, budgets, results, macro, caveat: PRIMER_CAVEAT }, null, 2),
+      );
       return;
     }
     renderPrimerReport(results);

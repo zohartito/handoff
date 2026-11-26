@@ -1,7 +1,7 @@
 import { platform } from "node:os";
 import { resolveHandoffPaths } from "../format/paths.js";
 import { exists } from "../util/fs.js";
-import { buildPrimer, buildStandingRulesContext } from "./prime.js";
+import { buildPrimer, buildStandingRulesContext, SESSION_START_BUDGET } from "./prime.js";
 import { save } from "./save.js";
 import { attempt } from "./attempt.js";
 import { autoCapture } from "./auto-capture.js";
@@ -48,7 +48,7 @@ export async function hook(opts: HookOpts): Promise<void> {
     // Deliberately not gated on payload.source: SessionStart re-fires after a
     // compaction (source "compact") and on resume/clear/fork, and re-injecting
     // the primer at each of those is exactly what we want.
-    const primer = await buildPrimer(paths, "claude-code", 9000);
+    const primer = await buildPrimer(paths, "claude-code", SESSION_START_BUDGET);
     const payload = {
       hookSpecificOutput: {
         hookEventName: "SessionStart",
